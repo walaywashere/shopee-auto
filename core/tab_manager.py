@@ -57,16 +57,16 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using CDP (Chrome DevTools Protocol) - works without focus."""
+    """Fill an input field using CDP (Chrome DevTools Protocol) - no clicking needed."""
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
         raise RuntimeError(f"Element not found for {field_name or xpath}")
     
     element = elements[0]
     
-    # Click the element to focus it
-    await element.click()
-    await async_sleep(0.3)  # Wait for field to be ready after click
+    # Focus element using CDP (no click)
+    await tab.send(cdp.dom.focus(backend_node_id=element.backend_node_id))
+    await async_sleep(0.2)  # Wait for focus
     
     # Type each character using CDP
     for char in value:
