@@ -66,14 +66,9 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
     
     # Click the element to focus it
     await element.click()
+    await async_sleep(0.3)  # Wait for field to be ready after click
     
-    # Clear field: Ctrl+A then Delete (fast)
-    await tab.send(cdp.input_.dispatch_key_event("rawKeyDown", modifiers=2, windows_virtual_key_code=65, code="KeyA", key="a"))
-    await tab.send(cdp.input_.dispatch_key_event("keyUp", modifiers=2, windows_virtual_key_code=65, code="KeyA", key="a"))
-    await tab.send(cdp.input_.dispatch_key_event("rawKeyDown", windows_virtual_key_code=46, code="Delete", key="Delete"))
-    await tab.send(cdp.input_.dispatch_key_event("keyUp", windows_virtual_key_code=46, code="Delete", key="Delete"))
-    
-    # Type each character using CDP (no delays)
+    # Type each character using CDP
     for char in value:
         await tab.send(cdp.input_.dispatch_key_event("char", text=char))
     
@@ -102,7 +97,11 @@ async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
         if name:
             await tab.xpath(xpaths.get("name", ""), timeout=element_timeout)
         
-        # Fill form fields instantly (no delays between fields)
+        # Wait 1 second after all elements are loaded
+        log_info(f"All elements loaded, waiting 1s before filling")
+        await async_sleep(1)
+        
+        # Fill form fields
         log_info(f"Filling card form for card ending {card_last4}")
         
         await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
