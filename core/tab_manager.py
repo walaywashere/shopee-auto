@@ -57,7 +57,7 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using nodriver's built-in set_value method."""
+    """Fill an input field using element.apply() - no stale node_id issues."""
     # Wait for element to exist
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
@@ -65,18 +65,16 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
     
     element = elements[0]
     
-    # Use nodriver's built-in set_value method (uses CDP internally)
-    await element.set_value(value)
-    
-    # Trigger input/change events so React/Vue frameworks recognize the change
+    # Use element.apply() to set value and trigger events (all in one call, no stale IDs)
     await element.apply("""
-        function(el) {
+        function(el, value) {
+            el.value = value;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
         }
-    """)
+    """, value)
     
-    log_info(f"Filled {field_name or 'field'} with nodriver set_value()")
+    log_info(f"Filled {field_name or 'field'} with element.apply()")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
