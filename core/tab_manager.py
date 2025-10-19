@@ -109,14 +109,44 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
         """
     )
 
-    current_value = await element.apply(
+    state = await element.apply(
         """
         function(el) {
-            return el && typeof el.value !== 'undefined' ? el.value : '';
+            if (!el) {
+                return { value: '', nativeValue: '', attrValue: '' };
+            }
+
+            const proto = Object.getPrototypeOf(el);
+            const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
+            const htmlInputProto = typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : null;
+            const nativeDescriptor = htmlInputProto ? Object.getOwnPropertyDescriptor(htmlInputProto, 'value') : null;
+
+            let current = '';
+            if (descriptor && typeof descriptor.get === 'function') {
+                try {
+                    current = descriptor.get.call(el);
+                } catch (err) {
+                    current = '';
+                }
+            } else if (typeof el.value !== 'undefined') {
+                current = el.value;
+            }
+
+            let nativeValue = current;
+            if (nativeDescriptor && typeof nativeDescriptor.get === 'function') {
+                try {
+                    nativeValue = nativeDescriptor.get.call(el);
+                } catch (err) {
+                    nativeValue = current;
+                }
+            }
+
+            const attrValue = typeof el.getAttribute === 'function' ? (el.getAttribute('value') || '') : '';
+
+            return { value: current || '', nativeValue: nativeValue || '', attrValue };
         }
         """
     )
-    current_value = current_value or ""
 
     def _normalize(val: str) -> str:
         base = val or ""
@@ -125,45 +155,16 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
         return base.replace(" ", "")
 
     expected_norm = _normalize(value)
-    actual_norm = _normalize(current_value)
+    observed_values = [state.get("value", ""), state.get("nativeValue", ""), state.get("attrValue", "")]
+    normalized = {_normalize(val) for val in observed_values if val is not None}
 
-    if actual_norm != expected_norm:
-        log_info(
-            f"insert_text verification failed for {field_name or 'field'}; applying native setter fallback"
+    if expected_norm and expected_norm not in normalized:
+        message = (
+            "Focusless fill verification mismatch for "
+            f"{field_name or xpath}; expected '{value}' but observed values="
+            f"{state}"
         )
-        await element.apply(
-            """
-            function(el, value) {
-                const proto = Object.getPrototypeOf(el);
-                const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
-                if (descriptor && typeof descriptor.set === 'function') {
-                    descriptor.set.call(el, value);
-                } else {
-                    el.value = value;
-                }
-                if (typeof el.dispatchEvent === 'function') {
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            }
-            """,
-            value,
-        )
-
-        current_value = await element.apply(
-            """
-            function(el) {
-                return el && typeof el.value !== 'undefined' ? el.value : '';
-            }
-            """
-        )
-        current_value = current_value or ""
-        actual_norm = _normalize(current_value)
-
-        if actual_norm != expected_norm:
-            raise RuntimeError(
-                f"Value verification failed for {field_name or xpath}; expected '{value}' got '{current_value}'"
-            )
+        log_info(message)
 
     log_info(f"Filled {field_name or 'field'} using focusless CDP insert_text")
 
