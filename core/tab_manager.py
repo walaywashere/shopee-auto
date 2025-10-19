@@ -47,7 +47,6 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
     for attempt in range(1, attempts + 1):
         try:
             await tab.get(url)
-            await async_sleep(2.5)  # Wait for form to fully load, render, and JS to initialize
             log_info("Payment form loaded")
             return
         except Exception as exc:
@@ -58,102 +57,22 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field with retry logic."""
-    max_retries = 3
-    for attempt in range(1, max_retries + 1):
-        try:
-            # Try XPath first
-            elements = await tab.xpath(xpath, timeout=timeout)
-            
-            # If XPath fails, try CSS selectors as fallback based on field name
-            if not elements and field_name:
-                log_info(f"XPath failed for {field_name}, trying CSS selector fallback...")
-                css_selectors = {
-                    "card_number": "input[placeholder*='Card Number'], input[name*='card'], input[id*='card']",
-                    "expiry": "input[placeholder*='Expiry'], input[placeholder*='MM/YY'], input[name*='expiry']",
-                    "cvv": "input[placeholder*='CVV'], input[name*='cvv'], input[id*='cvv']",
-                    "name": "input[placeholder*='Name'], input[name*='name'], input[id*='name']"
-                }
-                selector = css_selectors.get(field_name, "")
-                if selector:
-                    try:
-                        elements = await tab.select_all(selector)
-                    except Exception:
-                        pass
-            
-            if not elements:
-                if attempt < max_retries:
-                    log_info(f"Element {field_name or xpath} not found (attempt {attempt}/{max_retries}), retrying...")
-                    await async_sleep(1)
-                    continue
-                raise RuntimeError(f"Element not found for {field_name or xpath}")
-            
-            element = elements[0]
-            
-            # Make sure element is visible and interactable
-            await element.scroll_into_view()
-            await async_sleep(0.5)  # Wait for scroll animation
-            
-            # Click to ensure focus
-            try:
-                await element.click()
-                await async_sleep(0.2)
-            except Exception:
-                await element.focus()
-                await async_sleep(0.2)
-            
-            # Clear existing value
-            try:
-                await element.clear_input()
-                await async_sleep(0.2)
-            except Exception:
-                # Alternative clear method
-                try:
-                    await element.send_keys("\b" * 50)  # Backspace multiple times
-                    await async_sleep(0.2)
-                except Exception:
-                    pass
-            
-            # Send the value
-            await element.send_keys(value)
-            await async_sleep(0.3)  # Wait for input to register
-            
-            # Verify the value was actually entered
-            try:
-                entered_value = await element.get_property("value")
-                if entered_value != value:
-                    if attempt < max_retries:
-                        log_info(f"Value mismatch for {field_name} (expected '{value}', got '{entered_value}'), trying character-by-character...")
-                        
-                        # Try alternative: type character by character
-                        await element.clear_input()
-                        await async_sleep(0.2)
-                        for char in value:
-                            await element.send_keys(char)
-                            await async_sleep(0.05)  # Small delay between characters
-                        await async_sleep(0.3)
-                        
-                        # Verify again
-                        entered_value = await element.get_property("value")
-                        if entered_value != value:
-                            log_info(f"Still mismatch after char-by-char (got '{entered_value}'), will retry...")
-                            await async_sleep(0.5)
-                            continue
-                    else:
-                        log_error(f"Failed to verify input for {field_name}: expected '{value}', got '{entered_value}'")
-            except Exception:
-                pass  # Verification failed, but input might still be OK
-            
-            log_info(f"Successfully filled {field_name or 'field'} with value: {value if field_name != 'cvv' else '***'}")
-            return  # Success
-            
-        except Exception as exc:
-            if attempt < max_retries:
-                log_info(f"Error filling {field_name} (attempt {attempt}/{max_retries}): {exc}, retrying...")
-                await async_sleep(1)
-            else:
-                log_error(f"Failed to fill {field_name} after {max_retries} attempts: {exc}")
-                raise
+    """Fill an input field."""
+    elements = await tab.xpath(xpath, timeout=timeout)
+    if not elements:
+        raise RuntimeError(f"Element not found for {field_name or xpath}")
+    
+    element = elements[0]
+    await element.scroll_into_view()
+    await element.focus()
+    
+    try:
+        await element.clear_input()
+    except Exception:
+        pass
+    
+    await element.send_keys(value)
+    log_info(f"Filled {field_name or 'field'}")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
@@ -169,27 +88,32 @@ async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
 
     card_last4 = card.get("number", "")[-4:]
     
-    # Wait for form to be interactive by checking if card number field is present
-    log_info(f"Waiting for form to be interactive for card ending {card_last4}")
-    await async_sleep(1)
-    
     try:
+        # Wait for all form elements to be present
+        log_info(f"Waiting for all form elements to load for card ending {card_last4}")
+        await tab.xpath(xpaths.get("card_number", ""), timeout=element_timeout)
+        await tab.xpath(xpaths.get("mmyy", ""), timeout=element_timeout)
+        await tab.xpath(xpaths.get("cvv", ""), timeout=element_timeout)
+        if name:
+            await tab.xpath(xpaths.get("name", ""), timeout=element_timeout)
+        
+        # Wait 1 second after all elements are loaded
+        log_info(f"All elements loaded, waiting 1s before filling")
+        await async_sleep(1)
+        
+        # Now fill the form
         log_info(f"Filling card number for card ending {card_last4}")
         await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
-        await async_sleep(0.3)  # Small delay between fields
         
         log_info(f"Filling expiry date for card ending {card_last4}")
         await _fill_input(tab, xpaths.get("mmyy", ""), expiry, element_timeout, "expiry")
-        await async_sleep(0.3)
         
         log_info(f"Filling CVV for card ending {card_last4}")
         await _fill_input(tab, xpaths.get("cvv", ""), card.get("cvv", ""), element_timeout, "cvv")
-        await async_sleep(0.3)
         
         if name:
             log_info(f"Filling name for card ending {card_last4}")
             await _fill_input(tab, xpaths.get("name", ""), name, element_timeout, "name")
-            await async_sleep(0.3)
         
         log_info(f"All fields filled successfully for card ending {card_last4}")
     except Exception as exc:
