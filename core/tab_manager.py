@@ -24,10 +24,21 @@ async def create_tab(browser: Browser) -> Tuple[Any, str]:
             return tab, "new_window"
         except Exception as window_exc:
             log_error(
-                f"New window attempt failed: {window_exc}; falling back to active tab"
+                f"New window attempt failed: {window_exc}; attempting to reuse existing tab"
             )
-            tab = await browser.get("about:blank")
-            return tab, "reuse"
+            # Try to get the first available tab from browser
+            try:
+                tabs = getattr(browser, "tabs", None) or getattr(browser, "contexts", None)
+                if tabs and len(tabs) > 0:
+                    log_info(f"Reusing existing tab from browser (found {len(tabs)} tabs)")
+                    return tabs[0], "reuse"
+                else:
+                    log_error("No existing tabs found; attempting browser.get without flags")
+                    tab = await browser.get("about:blank")
+                    return tab, "reuse"
+            except Exception as final_exc:
+                log_error(f"All tab creation methods failed: {final_exc}")
+                raise RuntimeError(f"Cannot create or access any browser tab: {final_exc}") from final_exc
 
 
 async def navigate_to_form(tab, url: str, timeout: float) -> None:

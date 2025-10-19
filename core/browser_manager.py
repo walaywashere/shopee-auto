@@ -22,6 +22,17 @@ class NetworkInterceptor:
         self._metadata: Dict[str, Dict[str, Any]] = {}
         self._queue: asyncio.Queue = asyncio.Queue()
 
+    def clear_queue(self) -> int:
+        """Clear all pending responses from the queue and return count cleared."""
+        count = 0
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+                count += 1
+            except asyncio.QueueEmpty:
+                break
+        return count
+
     def track_request(self, request_id: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         self._pending_ids.add(request_id)
         if metadata:

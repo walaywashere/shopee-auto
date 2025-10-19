@@ -78,16 +78,21 @@ async def _await_target_response(
     while True:
         remaining = deadline - asyncio.get_event_loop().time()
         if remaining <= 0:
+            log_error(f"API response timeout after {timeout}s waiting for {interceptor.target_endpoint}")
             return None
         try:
             payload = await interceptor.wait_for_response(timeout=remaining)
         except asyncio.TimeoutError:
+            log_error(f"API response timeout after {timeout}s waiting for {interceptor.target_endpoint}")
             return None
         if not payload:
             continue
         url = (payload.get("url") or "").lower()
         if interceptor.target_endpoint in url:
+            log_info(f"Received target API response: {url}")
             return payload
+        else:
+            log_info(f"Skipping non-target response: {url}")
 
 
 async def _append_success_result(results_path: str, card_str: str) -> None:
@@ -126,6 +131,11 @@ async def _process_single_card(
 
     while attempt <= max_retries:
         try:
+            # Clear any stale responses from previous cards/attempts
+            cleared = interceptor.clear_queue()
+            if cleared > 0:
+                log_info(f"Cleared {cleared} stale response(s) from interceptor queue")
+            
             await tab_manager.submit_form(current_tab, config)
             payload = await _await_target_response(interceptor, api_timeout)
             payload = payload or {}

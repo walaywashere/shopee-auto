@@ -72,6 +72,9 @@ def check_add_card_failed(page_content: str) -> bool:
 
 async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, Any]) -> Tuple[str, str]:
     """Determine final status label and reason."""
+    # Log received payload for debugging
+    log_info(f"Analyzing API payload: url={api_payload.get('url')}, has_body={bool(api_payload.get('body'))}")
+    
     if is_three_ds(api_payload):
         log_info("3DS challenge detected via API response")
         return "[3DS]", "Challenge flow triggered"
