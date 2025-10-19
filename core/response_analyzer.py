@@ -72,6 +72,21 @@ async def extract_result_message(tab, config: Dict[str, Any]) -> str:
             return ""
         
         log_info(f"Attempting to extract result message using xpath: {xpath}")
+        
+        # First try to find the specific txtNewline div
+        try:
+            txtNewline_elements = await tab.select_all("div.txtNewline")
+            if txtNewline_elements:
+                log_info(f"Found {len(txtNewline_elements)} div.txtNewline elements")
+                text = await txtNewline_elements[0].get_property("textContent")
+                if text:
+                    result = text.strip()
+                    log_info(f"Extracted from txtNewline: '{result}'")
+                    return result
+        except Exception as e:
+            log_info(f"txtNewline extraction failed: {e}")
+        
+        # Fallback to the main result element
         elements = await tab.xpath(xpath, timeout=3)
         if not elements:
             log_info("Result page element not found")
