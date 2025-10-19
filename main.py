@@ -20,6 +20,7 @@ from core.browser_manager import (
 from core.checker import process_all_batches
 from input.card_processor import build_card_queue
 from utils.helpers import load_config, log_error, log_info, log_summary, set_verbose
+from utils.telegram_sender import send_batch_summary, is_telegram_configured
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -65,6 +66,9 @@ def parse_arguments() -> argparse.Namespace:
 
 
 async def _async_main(args: argparse.Namespace) -> int:
+    import time
+    start_time = time.time()
+    
     # Set verbose mode based on CLI flag
     set_verbose(args.verbose)
     
@@ -143,7 +147,27 @@ async def _async_main(args: argparse.Namespace) -> int:
             str(failed_path),
             str(card_path),
         )
+        
+        # Calculate duration
+        duration = time.time() - start_time
+        
         log_summary(summary)
+        log_info(f"Total duration: {duration:.1f}s")
+        
+        # Send Telegram batch summary
+        if is_telegram_configured():
+            log_info("Sending batch summary to Telegram...")
+            success = send_batch_summary(
+                summary['total'],
+                summary['success'],
+                summary['failed'],
+                duration
+            )
+            if success:
+                log_info("✅ Batch summary sent to Telegram")
+            else:
+                log_info("❌ Failed to send batch summary to Telegram")
+        
         return 0
     except Exception as exc:
         log_error(f"Fatal error: {exc}")

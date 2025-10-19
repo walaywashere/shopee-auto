@@ -21,6 +21,7 @@ from core.browser_manager import init_browser, close_browser, load_session_cooki
 from core.checker import process_all_batches
 from input.card_processor import build_card_queue, validate_card
 from utils.helpers import log_info, log_error
+from utils.telegram_sender import send_telegram_notification, send_batch_summary, is_telegram_configured
 
 
 # Set appearance
@@ -447,6 +448,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
     
     async def process_cards(self):
         """Async card processing logic"""
+        import time
+        start_time = time.time()
         browsers = []
         try:
             # Build card queue
@@ -516,13 +519,34 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.after(0, lambda: self.failed_label.configure(text=f"❌ Failed: {summary['failed']}"))
             self.after(0, lambda: self.progress_bar.set(1.0))
             
+            # Calculate duration
+            duration = time.time() - start_time
+            
             self.log_message("=" * 50, "INFO")
             self.log_message("PROCESSING COMPLETE!", "INFO")
             self.log_message(f"Total: {summary['total']}", "INFO")
             self.log_message(f"Success: {summary['success']}", "INFO")
             self.log_message(f"Failed: {summary['failed']}", "INFO")
             self.log_message(f"3DS: {summary.get('three_ds', 0)}", "INFO")
+            self.log_message(f"Duration: {duration:.1f}s", "INFO")
             self.log_message("=" * 50, "INFO")
+            
+            # Send Telegram batch summary
+            if is_telegram_configured():
+                self.log_message("Sending batch summary to Telegram...", "INFO")
+                loop = asyncio.get_event_loop()
+                success = await loop.run_in_executor(
+                    None,
+                    send_batch_summary,
+                    summary['total'],
+                    summary['success'],
+                    summary['failed'],
+                    duration
+                )
+                if success:
+                    self.log_message("✅ Batch summary sent to Telegram", "INFO")
+                else:
+                    self.log_message("❌ Failed to send batch summary", "WARNING")
             
         except asyncio.CancelledError:
             self.log_message("Processing cancelled - cleaning up...", "WARNING")
