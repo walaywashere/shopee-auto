@@ -10,7 +10,7 @@ from nodriver import Browser
 from core.browser_manager import NetworkInterceptor, setup_network_interception
 from core import response_analyzer
 from core import tab_manager
-from input.card_processor import format_card_string
+from input.card_processor import format_card_string, remove_card_from_file
 from utils.helpers import (
     async_sleep,
     log_card_result,
@@ -178,6 +178,15 @@ async def _process_single_card(
     return card, current_tab
 
 
+async def _remove_card_entry(card_file_path: str, card: CardDict) -> None:
+    """Remove the processed card from the input file to avoid reprocessing."""
+    raw_entry = card.get("raw")
+    if not raw_entry:
+        return
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, remove_card_from_file, card_file_path, raw_entry)
+
+
 async def _worker(
     worker_id: int,
     browser: Browser,
@@ -186,6 +195,8 @@ async def _worker(
     results_path: str,
     results_list: List[CardDict],
     results_lock: asyncio.Lock,
+    card_file_path: str,
+    file_lock: asyncio.Lock,
 ) -> None:
     """Worker that processes cards from the global queue with its own browser instance."""
     global _card_queue, _total_cards
@@ -206,6 +217,7 @@ async def _worker(
                 # Queue is empty, worker is done
                 break
             
+            result_record: Optional[CardDict] = None
             try:
                 log_info(f"Worker {worker_id} processing card {card_index}/{_total_cards}")
                 
@@ -226,11 +238,8 @@ async def _worker(
                     card["error"] = str(exc)
                     card_str = format_card_string(card)
                     log_card_result(card_index, _total_cards, card["status"], card_str, card["error"])
-                    
-                    async with results_lock:
-                        results_list.append(card)
-                    
                     worker_tab = None
+                    result_record = card
                     continue
                 
                 # Process the card
@@ -247,17 +256,22 @@ async def _worker(
                 )
                 
                 worker_tab = final_tab
-                
-                async with results_lock:
-                    results_list.append(card_result)
-                
+                result_record = card_result
             except Exception as exc:
                 log_error(f"Worker {worker_id} encountered error processing card: {exc}")
                 card["status"] = "[FAILED]"
                 card["error"] = str(exc)
-                async with results_lock:
-                    results_list.append(card)
+                result_record = card
             finally:
+                if result_record:
+                    async with results_lock:
+                        results_list.append(result_record)
+                if card:
+                    async with file_lock:
+                        try:
+                            await _remove_card_entry(card_file_path, card)
+                        except Exception as removal_exc:
+                            log_error(f"Failed to remove processed card from file: {removal_exc}")
                 _card_queue.task_done()
     
     finally:
@@ -272,6 +286,7 @@ async def process_all_batches(
     cookies_path: str,
     config: Dict[str, Any],
     results_path: str,
+    card_file_path: str,
 ) -> Dict[str, Any]:
     """Process all cards using concurrent workers, each with their own browser instance."""
     global _card_queue, _total_cards
@@ -291,9 +306,21 @@ async def process_all_batches(
     results_lock = asyncio.Lock()
     
     # Create workers, each with its own browser instance
+    file_lock = asyncio.Lock()
+
     workers = [
         asyncio.create_task(
-            _worker(i + 1, browsers[i], cookies_path, config, results_path, results_list, results_lock)
+            _worker(
+                i + 1,
+                browsers[i],
+                cookies_path,
+                config,
+                results_path,
+                results_list,
+                results_lock,
+                card_file_path,
+                file_lock,
+            )
         )
         for i in range(num_workers)
     ]

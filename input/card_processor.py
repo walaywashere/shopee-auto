@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import tempfile
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -103,3 +105,41 @@ def build_card_queue(filepath: str) -> List[CardData]:
 def format_card_string(card: CardData) -> str:
     """Return canonical string representation for logging/output."""
     return f"{card['number']}|{card['mm']}|{card['yy']}|{card['cvv']}"
+
+
+def remove_card_from_file(filepath: str, raw_entry: str) -> None:
+    """Remove the first occurrence of the raw card entry from the source file."""
+    if not raw_entry:
+        return
+
+    source_path = Path(filepath)
+    if not source_path.exists():
+        return
+
+    normalized = raw_entry.strip()
+    if not normalized:
+        return
+
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(source_path.parent))
+    removed = False
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="") as tmp_file, source_path.open(
+            "r", encoding="utf-8", newline=""
+        ) as src_file:
+            for line in src_file:
+                if not removed and line.strip() == normalized:
+                    removed = True
+                    continue
+                tmp_file.write(line)
+
+        if removed:
+            os.replace(tmp_path, source_path)
+        else:
+            os.remove(tmp_path)
+    except Exception:
+        # Ensure temp file is removed on any unexpected error
+        try:
+            os.remove(tmp_path)
+        except FileNotFoundError:
+            pass
+        raise

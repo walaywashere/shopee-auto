@@ -129,6 +129,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             str(cookies_path),
             config,
             str(results_path),
+            str(card_path),
         )
         log_summary(summary)
         return 0
