@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from nodriver import Browser, cdp
@@ -54,6 +56,48 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
             if attempt == attempts:
                 raise
             await async_sleep(2)
+
+
+async def _wait_for_elements_ready(tab, xpaths: Iterable[str], timeout: float, poll_interval: float = 0.2) -> None:
+    """Ensure all provided XPaths resolve to interactive elements."""
+    relevant_xpaths = [xp for xp in xpaths if xp]
+    if not relevant_xpaths:
+        return
+
+    deadline = time.monotonic() + timeout
+    js_xpaths = json.dumps(relevant_xpaths)
+
+    while True:
+        ready = await tab.evaluate(
+            f"""
+            (function(xpaths) {{
+                for (const xp of xpaths) {{
+                    const el = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    if (!el) {{
+                        return false;
+                    }}
+                    if (el instanceof HTMLInputElement) {{
+                        if (el.disabled || el.readOnly) {{
+                            return false;
+                        }}
+                    }}
+                    const rect = el.getBoundingClientRect();
+                    if (!rect || (rect.width === 0 && rect.height === 0)) {{
+                        return false;
+                    }}
+                }}
+                return true;
+            }})({js_xpaths});
+            """
+        )
+
+        if ready:
+            return
+
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Timed out waiting for form inputs to become ready")
+
+        await async_sleep(poll_interval)
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
@@ -190,10 +234,22 @@ async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
         await tab.xpath(xpaths.get("cvv", ""), timeout=element_timeout)
         if name:
             await tab.xpath(xpaths.get("name", ""), timeout=element_timeout)
-        
-        # Wait 1 second after all elements are loaded
-        log_info(f"All elements loaded, waiting 1s before filling")
-        await async_sleep(1)
+
+        readiness_xpaths = [
+            xpaths.get("card_number", ""),
+            xpaths.get("mmyy", ""),
+            xpaths.get("cvv", ""),
+        ]
+        if name:
+            readiness_xpaths.append(xpaths.get("name", ""))
+
+        readiness_timeout = max(element_timeout, 6)
+        log_info(f"Verifying form inputs are interactable (timeout {readiness_timeout}s)")
+        await _wait_for_elements_ready(tab, readiness_xpaths, readiness_timeout)
+
+        # Wait 1.5 seconds after all elements are ready
+        log_info("Inputs ready; waiting 1.5s before filling")
+        await async_sleep(1.5)
         
         # Fill form fields
         log_info(f"Filling card form for card ending {card_last4}")
