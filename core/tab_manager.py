@@ -57,39 +57,27 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field instantly using JavaScript (maximum speed, no delays)."""
+    """Fill an input field using CDP (Chrome DevTools Protocol) - works without focus."""
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
         raise RuntimeError(f"Element not found for {field_name or xpath}")
     
     element = elements[0]
     
-    # Set value directly via JavaScript - instant, no typing animation
-    try:
-        await element.apply("""
-            function(el, value) {
-                el.value = value;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        """, value)
-        log_info(f"Filled {field_name or 'field'} instantly via JS")
-    except Exception as e:
-        # Fallback: click and use CDP events if JS fails
-        log_info(f"JS fill failed for {field_name}, using CDP fallback: {e}")
-        await element.click()
-        
-        # Clear with Ctrl+A + Delete
-        await tab.send(cdp.input_.dispatch_key_event("keyDown", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))
-        await tab.send(cdp.input_.dispatch_key_event("keyUp", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))
-        await tab.send(cdp.input_.dispatch_key_event("keyDown", key="Delete", code="Delete", windows_virtual_key_code=46))
-        await tab.send(cdp.input_.dispatch_key_event("keyUp", key="Delete", code="Delete", windows_virtual_key_code=46))
-        
-        # Type value
-        for char in value:
-            await tab.send(cdp.input_.dispatch_key_event("char", text=char))
-        
-        log_info(f"Filled {field_name or 'field'} using CDP fallback")
+    # Click the element to focus it
+    await element.click()
+    
+    # Clear field: Ctrl+A then Delete (fast)
+    await tab.send(cdp.input_.dispatch_key_event("rawKeyDown", modifiers=2, windows_virtual_key_code=65, code="KeyA", key="a"))
+    await tab.send(cdp.input_.dispatch_key_event("keyUp", modifiers=2, windows_virtual_key_code=65, code="KeyA", key="a"))
+    await tab.send(cdp.input_.dispatch_key_event("rawKeyDown", windows_virtual_key_code=46, code="Delete", key="Delete"))
+    await tab.send(cdp.input_.dispatch_key_event("keyUp", windows_virtual_key_code=46, code="Delete", key="Delete"))
+    
+    # Type each character using CDP (no delays)
+    for char in value:
+        await tab.send(cdp.input_.dispatch_key_event("char", text=char))
+    
+    log_info(f"Filled {field_name or 'field'} with CDP")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
