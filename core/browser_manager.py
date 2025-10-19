@@ -225,14 +225,15 @@ async def setup_network_interception(
             interceptor.push_payload(payload)
         except Exception as exc:
             error_msg = str(exc)
-            # "No resource with given identifier" means the page navigated (likely 3DS redirect)
+            # "No resource with given identifier" means the page navigated away
+            # This happens for both 3DS and successful redirects - let response_analyzer decide
             if "No resource with given identifier" in error_msg or "-32000" in error_msg:
-                log_info(f"Response body unavailable (likely 3DS redirect): {error_msg}")
-                # Push a special payload indicating 3DS challenge
+                log_info(f"Response body unavailable (page navigated): {error_msg}")
+                # Push empty body payload - let response_analyzer check the page URL
                 payload = {
                     "request_id": event.request_id,
-                    "body": '{"is_challenge_flow": true}',
-                    "three_ds_redirect": True,
+                    "body": "",
+                    "body_unavailable": True,
                     **metadata,
                 }
                 interceptor.push_payload(payload)

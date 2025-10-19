@@ -75,10 +75,32 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
     # Log received payload for debugging
     log_info(f"Analyzing API payload: url={api_payload.get('url')}, has_body={bool(api_payload.get('body'))}")
     
-    if is_three_ds(api_payload):
+    # If body is available, check for 3DS challenge flag
+    if api_payload.get("body") and is_three_ds(api_payload):
         log_info("3DS challenge detected via API response")
         return "[3DS]", "Challenge flow triggered"
 
+    # If body unavailable (page navigated), check current tab URL to determine where it went
+    if api_payload.get("body_unavailable"):
+        log_info("Response body unavailable - checking current page URL")
+        current_url = (tab.url or "").lower()
+        result_page_url = config.get("urls", {}).get("result_page", "").lower()
+        
+        if result_page_url and result_page_url in current_url:
+            log_info(f"Navigated to result page: {current_url}")
+            # Already on result page, check content
+            page_content = await fetch_page_content(tab)
+            if check_add_card_failed(page_content):
+                log_info("Detected failure text on result page")
+                return "[FAILED]", "Result page indicates failure"
+            log_info("Card addition succeeded")
+            return "[SUCCESS]", "Result page indicates success"
+        else:
+            # Not on result page, likely 3DS or still on payment form
+            log_info(f"Page navigated but not to result page (URL: {current_url}), likely 3DS challenge")
+            return "[3DS]", "Page redirected but not to result page"
+
+    # Body was available - wait for navigation to result page
     if not await wait_for_result_page(tab, config):
         log_error("Timeout waiting for result page")
         return "[FAILED]", "Result page timeout"
