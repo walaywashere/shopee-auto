@@ -51,6 +51,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         # Processing state
         self.is_processing = False
         self.processing_thread = None
+        self.monitor_thread = None
+        self.total_cards_count = 0
         
         # Setup UI
         self.setup_ui()
@@ -336,6 +338,14 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             messagebox.showerror("Error", "Cookies file does not exist!")
             return
         
+        # Clear previous results
+        for filepath in [self.results_file_path.get(), self.failed_file_path.get()]:
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
+        
         # Update UI state
         self.is_processing = True
         self.start_button.configure(state="disabled")
@@ -349,6 +359,10 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.config["browser"]["headless"] = self.headless_mode.get()
         self.config["workers"] = self.workers_count.get()
         
+        # Start monitoring thread
+        self.monitor_thread = threading.Thread(target=self.monitor_progress, daemon=True)
+        self.monitor_thread.start()
+        
         # Start processing in separate thread
         self.processing_thread = threading.Thread(target=self.run_processing, daemon=True)
         self.processing_thread.start()
@@ -358,6 +372,48 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.is_processing = False
         self.log_message("Stopping processing...", "WARNING")
         self.update_status("Stopping...")
+    
+    def monitor_progress(self):
+        """Monitor progress by watching result files"""
+        import time
+        
+        while self.is_processing:
+            try:
+                success_count = 0
+                failed_count = 0
+                
+                # Count lines in results file
+                if os.path.exists(self.results_file_path.get()):
+                    with open(self.results_file_path.get(), 'r', encoding='utf-8') as f:
+                        success_count = sum(1 for line in f if line.strip())
+                
+                # Count lines in failed file
+                if os.path.exists(self.failed_file_path.get()):
+                    with open(self.failed_file_path.get(), 'r', encoding='utf-8') as f:
+                        failed_count = sum(1 for line in f if line.strip())
+                
+                processed = success_count + failed_count
+                
+                # Update UI in main thread
+                self.after(0, lambda: self.success_label.configure(text=f"✅ Success: {success_count}"))
+                self.after(0, lambda: self.failed_label.configure(text=f"❌ Failed: {failed_count}"))
+                
+                # Update progress bar if we know total
+                if self.total_cards_count > 0:
+                    progress = processed / self.total_cards_count
+                    self.after(0, lambda p=progress: self.progress_bar.set(p))
+                    self.after(0, lambda p=processed, t=self.total_cards_count: 
+                              self.progress_label.configure(text=f"Processing: {p}/{t} cards"))
+                else:
+                    self.after(0, lambda p=processed: 
+                              self.progress_label.configure(text=f"Processed: {p} cards"))
+                
+                time.sleep(0.5)  # Update every 500ms
+                
+            except Exception as e:
+                # Silently continue if files don't exist yet
+                time.sleep(0.5)
+                continue
     
     def run_processing(self):
         """Run the actual card processing (in separate thread)"""
@@ -388,6 +444,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 return
             
             total_cards = len(card_list)
+            self.total_cards_count = total_cards  # Store for progress monitoring
             self.after(0, lambda: self.total_label.configure(text=f"Total: {total_cards}"))
             self.log_message(f"Loaded {total_cards} cards", "INFO")
             
