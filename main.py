@@ -41,6 +41,11 @@ def parse_arguments() -> argparse.Namespace:
         help="Path to results output (default: results.txt)",
     )
     parser.add_argument(
+        "--failed",
+        default="failed.txt",
+        help="Path to failed cards output (default: failed.txt)",
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         help="Override config to run browser headless",
@@ -66,6 +71,7 @@ async def _async_main(args: argparse.Namespace) -> int:
     config_path = Path(args.config).resolve()
     cookies_path = Path(args.cookies).resolve()
     results_path = Path(args.results).resolve()
+    failed_path = Path(args.failed).resolve()
     card_path = Path(args.card_file).resolve()
 
     if not card_path.exists():
@@ -122,6 +128,11 @@ async def _async_main(args: argparse.Namespace) -> int:
         if results_path.exists():
             results_path.unlink()
         results_path.touch()
+        
+        failed_path.parent.mkdir(parents=True, exist_ok=True)
+        if failed_path.exists():
+            failed_path.unlink()
+        failed_path.touch()
 
         summary = await process_all_batches(
             browsers,
@@ -129,6 +140,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             str(cookies_path),
             config,
             str(results_path),
+            str(failed_path),
             str(card_path),
         )
         log_summary(summary)

@@ -104,6 +104,16 @@ def _write_success_line(results_path: str, card_str: str) -> None:
         file.write(f"{card_str}\n")
 
 
+async def _append_failed_result(failed_path: str, card_str: str, reason: str) -> None:
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _write_failed_line, failed_path, card_str, reason)
+
+
+def _write_failed_line(failed_path: str, card_str: str, reason: str) -> None:
+    with open(failed_path, "a", encoding="utf-8") as file:
+        file.write(f"{card_str} | {reason}\n")
+
+
 async def _process_single_card(
     browser: Browser,
     prepared_tab,
@@ -112,6 +122,7 @@ async def _process_single_card(
     interceptor: NetworkInterceptor,
     config: Dict[str, Any],
     results_path: str,
+    failed_path: str,
     card_index: int,
     total_cards: int,
 ) -> Tuple[Dict[str, Any], Optional[Any]]:
@@ -143,6 +154,8 @@ async def _process_single_card(
             log_card_result(card_index, total_cards, status, card_str, reason)
             if status == "[SUCCESS]":
                 await _append_success_result(results_path, card_str)
+            elif status == "[FAILED]":
+                await _append_failed_result(failed_path, card_str, reason)
             card["status"] = status
             card["error"] = reason
             if between_cards:
@@ -173,6 +186,8 @@ async def _process_single_card(
     card["error"] = reason
     card_str = format_card_string(card)
     log_card_result(card_index, total_cards, status, card_str, reason)
+    if status == "[FAILED]":
+        await _append_failed_result(failed_path, card_str, reason)
     if between_cards:
         await async_sleep(between_cards)
     return card, current_tab
@@ -193,6 +208,7 @@ async def _worker(
     cookies_path: str,
     config: Dict[str, Any],
     results_path: str,
+    failed_path: str,
     results_list: List[CardDict],
     results_lock: asyncio.Lock,
     card_file_path: str,
@@ -251,6 +267,7 @@ async def _worker(
                     interceptor,
                     config,
                     results_path,
+                    failed_path,
                     card_index,
                     _total_cards,
                 )
@@ -286,6 +303,7 @@ async def process_all_batches(
     cookies_path: str,
     config: Dict[str, Any],
     results_path: str,
+    failed_path: str,
     card_file_path: str,
 ) -> Dict[str, Any]:
     """Process all cards using concurrent workers, each with their own browser instance."""
@@ -316,6 +334,7 @@ async def process_all_batches(
                 cookies_path,
                 config,
                 results_path,
+                failed_path,
                 results_list,
                 results_lock,
                 card_file_path,
