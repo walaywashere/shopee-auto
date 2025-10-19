@@ -539,6 +539,14 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.stop_button.configure(state="normal")
         self.progress_bar.set(0)
         self.log_textbox.delete("1.0", "end")
+        
+        # Reset counters
+        self.total_cards_count = 0
+        self.total_label.configure(text="Total: 0")
+        self.success_label.configure(text="✅ Success: 0")
+        self.three_ds_label.configure(text="🔵 3DS: 0")
+        self.failed_label.configure(text="❌ Failed: 0")
+        
         self.log_message("Starting card processing...", "INFO")
         self.update_status("Processing...")
         
@@ -659,10 +667,21 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         start_time = time.time()
         browsers = []
         try:
-            # Create output folder
+            # Create output folder and clean output files
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            self.log_message("Output folder ready", "INFO")
+            
+            # Clear previous results
+            results_file = Path(self.results_file_path.get())
+            failed_file = Path(self.failed_file_path.get())
+            three_ds_file = Path(self.three_ds_file_path.get())
+            
+            for file_path in [results_file, failed_file, three_ds_file]:
+                if file_path.exists():
+                    file_path.unlink()
+                file_path.touch()
+            
+            self.log_message("Output folder ready, previous results cleared", "INFO")
             
             # Build card queue
             self.log_message(f"Loading cards from {self.card_file_path.get()}...", "INFO")
