@@ -91,25 +91,42 @@ async def _async_main(args: argparse.Namespace) -> int:
         log_error("No valid cards to process")
         return 5
 
-    browser: Browser | None = None
+    # Get number of workers from config
+    num_workers = int(config.get("workers", 3))
+    log_info(f"Initializing {num_workers} browser instances for parallel processing")
+    
+    browsers: list[Browser] = []
     try:
-        browser = await init_browser(config)
-        cookies_loaded = await load_session_cookies(browser, str(cookies_path), config)
-        if not cookies_loaded:
-            log_error("Unable to load cookies; aborting")
-            return 6
-        if not await verify_session(browser, config):
-            log_error("Shopee session verification failed")
-            return 7
+        # Initialize all browser instances
+        for i in range(num_workers):
+            log_info(f"Starting browser {i + 1}/{num_workers}")
+            browser = await init_browser(config)
+            cookies_loaded = await load_session_cookies(browser, str(cookies_path), config)
+            if not cookies_loaded:
+                log_error(f"Unable to load cookies for browser {i + 1}; aborting")
+                # Close all browsers created so far
+                for b in browsers:
+                    await close_browser(b, keep_open=False)
+                return 6
+            if not await verify_session(browser, config):
+                log_error(f"Shopee session verification failed for browser {i + 1}")
+                # Close all browsers created so far
+                for b in browsers:
+                    await close_browser(b, keep_open=False)
+                return 7
+            browsers.append(browser)
+        
+        log_info(f"All {num_workers} browser instances ready")
+        
         results_path.parent.mkdir(parents=True, exist_ok=True)
         if results_path.exists():
             results_path.unlink()
         results_path.touch()
 
         summary = await process_all_batches(
-            browser,
+            browsers,
             card_queue,
-            None,
+            str(cookies_path),
             config,
             str(results_path),
         )
@@ -119,7 +136,10 @@ async def _async_main(args: argparse.Namespace) -> int:
         log_error(f"Fatal error: {exc}")
         return 1
     finally:
-        await close_browser(browser, keep_open=args.keep_browser_open)
+        # Close all browser instances
+        for i, browser in enumerate(browsers):
+            log_info(f"Closing browser {i + 1}/{len(browsers)}")
+            await close_browser(browser, keep_open=args.keep_browser_open)
 
 
 def main() -> int:

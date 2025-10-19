@@ -181,15 +181,16 @@ async def _process_single_card(
 async def _worker(
     worker_id: int,
     browser: Browser,
+    cookies_path: str,
     config: Dict[str, Any],
     results_path: str,
     results_list: List[CardDict],
     results_lock: asyncio.Lock,
 ) -> None:
-    """Worker that processes cards from the global queue."""
+    """Worker that processes cards from the global queue with its own browser instance."""
     global _card_queue, _total_cards
     
-    log_info(f"Worker {worker_id} started")
+    log_info(f"Worker {worker_id} started with dedicated browser instance")
     
     # Each worker gets its own interceptor
     interceptor = NetworkInterceptor(config.get("urls", {}).get("api_endpoint", ""))
@@ -266,13 +267,13 @@ async def _worker(
 
 
 async def process_all_batches(
-    browser: Browser,
+    browsers: List[Browser],
     card_list: List[CardDict],
-    interceptor: Optional[NetworkInterceptor],
+    cookies_path: str,
     config: Dict[str, Any],
     results_path: str,
 ) -> Dict[str, Any]:
-    """Process all cards using concurrent workers (max 3)."""
+    """Process all cards using concurrent workers, each with their own browser instance."""
     global _card_queue, _total_cards
     
     _total_cards = len(card_list)
@@ -282,16 +283,19 @@ async def process_all_batches(
     for index, card in enumerate(card_list, start=1):
         await _card_queue.put((card, index))
     
-    log_info(f"Processing {_total_cards} cards with 3 concurrent workers")
+    num_workers = len(browsers)
+    log_info(f"Processing {_total_cards} cards with {num_workers} concurrent workers (each with dedicated browser)")
     
     # Shared results list
     results_list: List[CardDict] = []
     results_lock = asyncio.Lock()
     
-    # Create 3 workers
+    # Create workers, each with its own browser instance
     workers = [
-        asyncio.create_task(_worker(i, browser, config, results_path, results_list, results_lock))
-        for i in range(1, 4)  # Workers 1, 2, 3
+        asyncio.create_task(
+            _worker(i + 1, browsers[i], cookies_path, config, results_path, results_list, results_lock)
+        )
+        for i in range(num_workers)
     ]
     
     # Wait for all workers to complete
