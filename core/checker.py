@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from nodriver import Browser
 
@@ -31,14 +31,41 @@ async def _prepare_tab(
     card: CardDict,
     config: Dict[str, Any],
     interceptor: NetworkInterceptor,
-) -> Any:
-    tab = await tab_manager.create_tab(browser)
-    await setup_network_interception(tab, config, interceptor)
-    form_url = config.get("urls", {}).get("payment_form", "")
-    timeouts = config.get("timeouts", {})
-    await tab_manager.navigate_to_form(tab, form_url, timeouts.get("page_load", 10))
-    await tab_manager.fill_card_form(tab, card, config)
-    return tab
+    reusable_tab_info: Optional[Tuple[Any, str]] = None,
+) -> Tuple[Any, str]:
+    card_suffix = card.get("number", "")[-4:]
+    stage = "reuse_tab" if reusable_tab_info else "create_tab"
+    tab = None
+    creation_mode = "reuse" if reusable_tab_info else "new_tab"
+    try:
+        log_info(f"Preparing tab for card ending {card_suffix} - {stage}")
+        if reusable_tab_info:
+            tab, creation_mode = reusable_tab_info
+        else:
+            tab, creation_mode = await tab_manager.create_tab(browser)
+
+        stage = "interception"
+        log_info(f"Preparing tab for card ending {card_suffix} - {stage}")
+        await setup_network_interception(tab, config, interceptor)
+
+        stage = "navigate"
+        log_info(f"Preparing tab for card ending {card_suffix} - {stage}")
+        form_url = config.get("urls", {}).get("payment_form", "")
+        timeouts = config.get("timeouts", {})
+        await tab_manager.navigate_to_form(tab, form_url, timeouts.get("page_load", 10))
+
+        stage = "fill_form"
+        log_info(f"Preparing tab for card ending {card_suffix} - {stage}")
+        await tab_manager.fill_card_form(tab, card, config)
+        log_info(f"Preparing tab for card ending {card_suffix} - complete")
+        return tab, creation_mode
+    except Exception as exc:
+        log_error(
+            f"Preparation failed for card ending {card_suffix} during stage '{stage}': {exc}"
+        )
+        if tab and creation_mode != "reuse":
+            await tab_manager.close_tab(tab)
+        raise
 
 
 async def _await_target_response(
@@ -76,13 +103,14 @@ def _write_success_line(results_path: str, card_str: str) -> None:
 async def _process_single_card(
     browser: Browser,
     prepared_tab,
+    creation_mode: str,
     card: CardDict,
     interceptor: NetworkInterceptor,
     config: Dict[str, Any],
     results_path: str,
     card_index: int,
     total_cards: int,
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], Optional[Any]]:
     max_retries = int(config.get("max_retries", 2))
     delays = config.get("delays", {})
     between_cards = float(delays.get("between_cards", 0))
@@ -94,6 +122,7 @@ async def _process_single_card(
     status = "[FAILED]"
     reason = "Max retries exceeded"
     current_tab = prepared_tab
+    current_mode = creation_mode
 
     while attempt <= max_retries:
         try:
@@ -107,10 +136,9 @@ async def _process_single_card(
                 await _append_success_result(results_path, card_str)
             card["status"] = status
             card["error"] = reason
-            await tab_manager.close_tab(current_tab)
             if between_cards:
                 await async_sleep(between_cards)
-            return card
+            return card, current_tab
         except Exception as exc:
             attempt += 1
             card["retry_count"] = attempt
@@ -118,11 +146,19 @@ async def _process_single_card(
             log_error(
                 f"Attempt {attempt} failed for card ending {card.get('number', '')[-4:]}: {exc}"
             )
-            if current_tab:
+            if current_tab and current_mode != "reuse":
                 await tab_manager.close_tab(current_tab)
+                current_tab = None
             if attempt > max_retries:
                 break
-            current_tab = await _prepare_tab(browser, card, config, interceptor)
+            reusable_info = (current_tab, "reuse") if current_tab else None
+            current_tab, current_mode = await _prepare_tab(
+                browser,
+                card,
+                config,
+                interceptor,
+                reusable_tab_info=reusable_info,
+            )
             await async_sleep(retry_delay)
     card["status"] = status
     card["error"] = reason
@@ -130,7 +166,7 @@ async def _process_single_card(
     log_card_result(card_index, total_cards, status, card_str)
     if between_cards:
         await async_sleep(between_cards)
-    return card
+    return card, current_tab
 
 
 async def process_batch(
@@ -143,29 +179,35 @@ async def process_batch(
     results_path: str,
 ) -> List[CardDict]:
     results: List[CardDict] = []
-    fill_tasks = [_prepare_tab(browser, card, config, interceptor) for card in batch_cards]
-    prepared_tabs = await asyncio.gather(*fill_tasks, return_exceptions=True)
-
-    first_error: Optional[BaseException] = None
-    valid_tabs = []
-    for item in prepared_tabs:
-        if isinstance(item, BaseException):
-            first_error = first_error or item
-        else:
-            valid_tabs.append(item)
-    if first_error:
-        for tab in valid_tabs:
-            await tab_manager.close_tab(tab)
-        log_error(f"Failed during fill phase: {first_error}")
-        raise first_error
-
-    prepared_tabs = valid_tabs
-
+    reusable_tab_info: Optional[Tuple[Any, str]] = None
     index = batch_index_start
-    for prepared_tab, card in zip(prepared_tabs, batch_cards):
-        card_result = await _process_single_card(
+
+    for card in batch_cards:
+        try:
+            prepared_tab, creation_mode = await _prepare_tab(
+                browser,
+                card,
+                config,
+                interceptor,
+                reusable_tab_info=reusable_tab_info,
+            )
+        except Exception as exc:
+            log_error(
+                f"Failed to prepare card ending {card.get('number', '')[-4:]}: {exc}"
+            )
+            card["status"] = "[FAILED]"
+            card["error"] = str(exc)
+            card_str = format_card_string(card)
+            log_card_result(index, total_cards, card["status"], card_str)
+            results.append(card)
+            reusable_tab_info = None
+            index += 1
+            continue
+
+        card_result, final_tab = await _process_single_card(
             browser,
             prepared_tab,
+            creation_mode,
             card,
             interceptor,
             config,
@@ -174,7 +216,12 @@ async def process_batch(
             total_cards,
         )
         results.append(card_result)
+        reusable_tab_info = (final_tab, "reuse") if final_tab is not None else None
         index += 1
+
+    if reusable_tab_info and reusable_tab_info[0]:
+        await tab_manager.close_tab(reusable_tab_info[0])
+
     return results
 
 

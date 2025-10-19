@@ -45,6 +45,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Override config to run browser headless",
     )
+    parser.add_argument(
+        "--keep-browser-open",
+        action="store_true",
+        help="Do not close the browser automatically when the run completes",
+    )
     return parser.parse_args()
 
 
@@ -105,7 +110,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         log_error(f"Fatal error: {exc}")
         return 1
     finally:
-        await close_browser(browser)
+        await close_browser(browser, keep_open=args.keep_browser_open)
 
 
 def main() -> int:

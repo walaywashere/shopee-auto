@@ -150,10 +150,23 @@ async def setup_network_interception(
     target_endpoint = config.get("urls", {}).get("api_endpoint", "").lower()
     interceptor = interceptor or NetworkInterceptor(target_endpoint)
 
-    try:
-        await tab.send(cdp.network.enable())
-    except Exception as exc:
-        log_error(f"Failed to enable network tracking: {exc}")
+    already_configured = getattr(tab, "_interception_configured", False)
+
+    enable_attempts = 3
+    for attempt in range(1, enable_attempts + 1):
+        try:
+            await tab.send(cdp.network.enable())
+            break
+        except Exception as exc:
+            log_error(
+                f"Failed to enable network tracking (attempt {attempt}/{enable_attempts}): {exc}"
+            )
+            if attempt == enable_attempts:
+                break
+            await async_sleep(0.5)
+
+    if already_configured:
+        return interceptor
 
     async def on_request(event, tab_ref=None):
         try:
@@ -211,12 +224,16 @@ async def setup_network_interception(
     tab.add_handler(cdp.network.LoadingFinished, on_loading_finished)
 
     log_info("Network interception configured")
+    setattr(tab, "_interception_configured", True)
     return interceptor
 
 
-async def close_browser(browser: Optional[Browser]) -> None:
+async def close_browser(browser: Optional[Browser], *, keep_open: bool = False) -> None:
     """Gracefully close the provided browser instance."""
     if not browser:
+        return
+    if keep_open:
+        log_info("Browser left open per request")
         return
     try:
         browser.stop()

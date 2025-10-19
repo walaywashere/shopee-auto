@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from nodriver import Browser
 
@@ -11,9 +11,23 @@ from utils.helpers import async_sleep, log_error, log_info
 CardDict = Dict[str, Any]
 
 
-async def create_tab(browser: Browser) -> Any:
-    """Create and return a fresh tab."""
-    return await browser.get("about:blank")
+async def create_tab(browser: Browser) -> Tuple[Any, str]:
+    """Create and return a fresh tab along with its creation mode."""
+    try:
+        tab = await browser.get("about:blank", new_tab=True)
+        return tab, "new_tab"
+    except Exception as exc:
+        log_error(f"Unable to open new tab: {exc}; retrying in new window")
+        await async_sleep(0.5)
+        try:
+            tab = await browser.get("about:blank", new_window=True)
+            return tab, "new_window"
+        except Exception as window_exc:
+            log_error(
+                f"New window attempt failed: {window_exc}; falling back to active tab"
+            )
+            tab = await browser.get("about:blank")
+            return tab, "reuse"
 
 
 async def navigate_to_form(tab, url: str, timeout: float) -> None:
