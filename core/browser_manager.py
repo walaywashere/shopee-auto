@@ -228,7 +228,20 @@ async def setup_network_interception(
             }
             interceptor.push_payload(payload)
         except Exception as exc:
-            log_error(f"Failed to obtain response body: {exc}")
+            error_msg = str(exc)
+            # "No resource with given identifier" means the page navigated (likely 3DS redirect)
+            if "No resource with given identifier" in error_msg or "-32000" in error_msg:
+                log_info(f"Response body unavailable (likely 3DS redirect): {error_msg}")
+                # Push a special payload indicating 3DS challenge
+                payload = {
+                    "request_id": event.request_id,
+                    "body": '{"is_challenge_flow": true}',
+                    "three_ds_redirect": True,
+                    **metadata,
+                }
+                interceptor.push_payload(payload)
+            else:
+                log_error(f"Failed to obtain response body: {exc}")
 
     tab.add_handler(cdp.network.RequestWillBeSent, on_request)
     tab.add_handler(cdp.network.ResponseReceived, on_response)
