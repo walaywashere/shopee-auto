@@ -261,6 +261,10 @@ async def _worker(
             except asyncio.TimeoutError:
                 # Queue is empty, worker is done
                 break
+            except asyncio.CancelledError:
+                # Processing was cancelled, exit gracefully
+                log_info(f"Worker {worker_id} cancelled, exiting")
+                break
             
             result_record: Optional[CardDict] = None
             try:
@@ -304,6 +308,11 @@ async def _worker(
                 
                 worker_tab = final_tab
                 result_record = card_result
+            except asyncio.CancelledError:
+                # Processing was cancelled during card processing
+                log_info(f"Worker {worker_id} cancelled during card processing")
+                _card_queue.task_done()
+                raise  # Re-raise to propagate cancellation
             except Exception as exc:
                 log_error(f"Worker {worker_id} encountered error processing card: {exc}")
                 card["status"] = "[FAILED]"
@@ -320,7 +329,10 @@ async def _worker(
                         except Exception as removal_exc:
                             log_error(f"Failed to remove processed card from file: {removal_exc}")
                 _card_queue.task_done()
-    
+    except asyncio.CancelledError:
+        # Catch cancellation at worker level
+        log_info(f"Worker {worker_id} received cancellation signal")
+        raise  # Re-raise to ensure proper cleanup
     finally:
         if worker_tab:
             await tab_manager.close_tab(worker_tab)
@@ -376,8 +388,19 @@ async def process_all_batches(
         for i in range(num_workers)
     ]
     
-    # Wait for all workers to complete
-    await asyncio.gather(*workers)
+    # Wait for all workers to complete (allow cancellation to propagate)
+    try:
+        await asyncio.gather(*workers)
+    except asyncio.CancelledError:
+        # If cancelled, cancel all worker tasks
+        log_info("Processing cancelled, stopping all workers...")
+        for worker in workers:
+            if not worker.done():
+                worker.cancel()
+        # Wait for workers to finish cancellation
+        await asyncio.gather(*workers, return_exceptions=True)
+        log_info("All workers stopped")
+        raise  # Re-raise to propagate cancellation
     
     # Calculate summary
     summary = {

@@ -69,8 +69,9 @@ def log_summary(summary: Dict[str, Any]) -> None:
 
 
 async def async_sleep(seconds: float) -> None:
-    """Asyncio sleep wrapper with cancellation resilience."""
+    """Asyncio sleep wrapper that properly propagates cancellation."""
     try:
         await asyncio.sleep(seconds)
     except asyncio.CancelledError:
-        log_error("Sleep cancelled; continuing execution.")
+        # Re-raise to properly propagate cancellation up the call stack
+        raise
