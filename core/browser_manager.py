@@ -137,19 +137,15 @@ async def verify_session(browser: Browser, config: Dict[str, Any]) -> bool:
     timeout = config.get("timeouts", {}).get("page_load", 10)
 
     tab = await browser.get(home_url)
-    try:
-        await async_sleep(min(timeout, 5))
-        current_url = (tab.url or "").lower()
-        if "login" in current_url:
-            log_error("Shopee session is not authenticated; login page detected")
-            return False
-        log_info("Shopee session verified")
-        return True
-    finally:
-        try:
-            await tab.close()
-        except Exception:
-            pass
+    await async_sleep(min(timeout, 5))
+    current_url = (tab.url or "").lower()
+    if "login" in current_url:
+        log_error("Shopee session is not authenticated; login page detected")
+        return False
+    log_info("Shopee session verified")
+    # Do NOT close the verification tab - it keeps the browser window alive
+    # The first batch will reuse this tab
+    return True
 
 
 async def setup_network_interception(
