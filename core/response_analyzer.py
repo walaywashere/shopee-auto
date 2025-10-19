@@ -78,10 +78,13 @@ async def _get_xpath_text_js(tab, xpath: str) -> str:
     if not xpath:
         return ""
     
+    # Properly escape the XPath for JavaScript
+    xpath_safe = json.dumps(xpath)
+    
     script = f"""
     (function() {{
         const element = document.evaluate(
-            '{xpath}',
+            {xpath_safe},
             document,
             null,
             XPathResult.FIRST_ORDERED_NODE_TYPE,
@@ -121,8 +124,10 @@ async def _get_xpath_text_js(tab, xpath: str) -> str:
                 result = str(text_data).strip()
             
             return result
-    except Exception:
-        return ""
+    except Exception as exc:
+        log_error(f"XPath text extraction via JS failed: {type(exc).__name__}: {str(exc)[:200]}")
+        # Fallback to old method if JS evaluation fails
+        return await _get_xpath_text(tab, xpath)
     
     return ""
 
