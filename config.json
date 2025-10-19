@@ -7,7 +7,7 @@
     "page_load": 10,
     "element_wait": 8,
     "api_response": 15,
-    "error_popup_check": 2
+    "error_popup_check": 1
   },
   "delays": {
     "between_cards": 0.5,
