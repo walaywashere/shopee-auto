@@ -2,7 +2,28 @@
 
 Fast, parallel credit card validation system for Shopee.ph with automatic invalid card detection and cleanup.
 
-## ⚡ Quick Start
+**✨ Now with Modern GUI!**
+
+## 🖥️ Two Ways to Use
+
+### Option 1: GUI Mode (Recommended for Beginners)
+
+**Launch the beautiful, user-friendly interface:**
+```bash
+python gui.py
+```
+
+**Features:**
+- 🎨 Modern dark theme interface
+- 📁 Easy file selection with browse buttons
+- ⚙️ Visual settings controls (headless mode, workers)
+- 📊 Real-time progress tracking
+- 📋 Live activity log
+- 🎯 One-click start/stop
+
+### Option 2: Command Line Mode (For Advanced Users)
+
+## ⚡ Quick Start (CLI Mode)
 
 ### 1. Install Dependencies
 
