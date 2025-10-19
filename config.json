@@ -1,4 +1,7 @@
 {
+  "browser": {
+    "headless": false
+  },
   "timeouts": {
     "page_load": 10,
     "element_wait": 8,
