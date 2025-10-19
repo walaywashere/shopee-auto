@@ -20,10 +20,9 @@ from utils.helpers import (
 
 CardDict = Dict[str, Any]
 
-
-def _chunk_cards(cards: List[CardDict], batch_size: int) -> Iterable[List[CardDict]]:
-    for index in range(0, len(cards), batch_size):
-        yield cards[index : index + batch_size]
+# Global card queue for workers
+_card_queue: asyncio.Queue = None
+_total_cards = 0
 
 
 async def _prepare_tab(
@@ -179,103 +178,141 @@ async def _process_single_card(
     return card, current_tab
 
 
-async def process_batch(
+async def _worker(
+    worker_id: int,
     browser: Browser,
-    batch_cards: List[CardDict],
-    batch_index_start: int,
-    total_cards: int,
-    interceptor: NetworkInterceptor,
     config: Dict[str, Any],
     results_path: str,
-) -> List[CardDict]:
-    results: List[CardDict] = []
-    reusable_tab_info: Optional[Tuple[Any, str]] = None
-    index = batch_index_start
-
-    for card in batch_cards:
-        try:
-            prepared_tab, creation_mode = await _prepare_tab(
-                browser,
-                card,
-                config,
-                interceptor,
-                reusable_tab_info=reusable_tab_info,
-            )
-        except Exception as exc:
-            log_error(
-                f"Failed to prepare card ending {card.get('number', '')[-4:]}: {exc}"
-            )
-            card["status"] = "[FAILED]"
-            card["error"] = str(exc)
-            card_str = format_card_string(card)
-            log_card_result(index, total_cards, card["status"], card_str, card["error"])
-            results.append(card)
-            reusable_tab_info = None
-            index += 1
-            continue
-
-        card_result, final_tab = await _process_single_card(
-            browser,
-            prepared_tab,
-            creation_mode,
-            card,
-            interceptor,
-            config,
-            results_path,
-            index,
-            total_cards,
-        )
-        results.append(card_result)
-        reusable_tab_info = (final_tab, "reuse") if final_tab is not None else None
-        index += 1
-
-    if reusable_tab_info and reusable_tab_info[0]:
-        await tab_manager.close_tab(reusable_tab_info[0])
-
-    return results
+    results_list: List[CardDict],
+    results_lock: asyncio.Lock,
+) -> None:
+    """Worker that processes cards from the global queue."""
+    global _card_queue, _total_cards
+    
+    log_info(f"Worker {worker_id} started")
+    
+    # Each worker gets its own interceptor
+    interceptor = NetworkInterceptor(config.get("urls", {}).get("api_endpoint", ""))
+    worker_tab = None
+    creation_mode = "new_tab"
+    
+    try:
+        while True:
+            try:
+                # Get a card from the queue (non-blocking with timeout)
+                card, card_index = await asyncio.wait_for(_card_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                # Queue is empty, worker is done
+                break
+            
+            try:
+                log_info(f"Worker {worker_id} processing card {card_index}/{_total_cards}")
+                
+                # Prepare tab for this card
+                reusable_info = (worker_tab, creation_mode) if worker_tab else None
+                try:
+                    prepared_tab, creation_mode = await _prepare_tab(
+                        browser,
+                        card,
+                        config,
+                        interceptor,
+                        reusable_tab_info=reusable_info,
+                    )
+                    worker_tab = prepared_tab
+                except Exception as exc:
+                    log_error(f"Worker {worker_id} failed to prepare card ending {card.get('number', '')[-4:]}: {exc}")
+                    card["status"] = "[FAILED]"
+                    card["error"] = str(exc)
+                    card_str = format_card_string(card)
+                    log_card_result(card_index, _total_cards, card["status"], card_str, card["error"])
+                    
+                    async with results_lock:
+                        results_list.append(card)
+                    
+                    worker_tab = None
+                    continue
+                
+                # Process the card
+                card_result, final_tab = await _process_single_card(
+                    browser,
+                    prepared_tab,
+                    creation_mode,
+                    card,
+                    interceptor,
+                    config,
+                    results_path,
+                    card_index,
+                    _total_cards,
+                )
+                
+                worker_tab = final_tab
+                
+                async with results_lock:
+                    results_list.append(card_result)
+                
+            except Exception as exc:
+                log_error(f"Worker {worker_id} encountered error processing card: {exc}")
+                card["status"] = "[FAILED]"
+                card["error"] = str(exc)
+                async with results_lock:
+                    results_list.append(card)
+            finally:
+                _card_queue.task_done()
+    
+    finally:
+        if worker_tab:
+            await tab_manager.close_tab(worker_tab)
+        log_info(f"Worker {worker_id} finished")
 
 
 async def process_all_batches(
     browser: Browser,
-    card_queue: List[CardDict],
+    card_list: List[CardDict],
     interceptor: Optional[NetworkInterceptor],
     config: Dict[str, Any],
     results_path: str,
 ) -> Dict[str, Any]:
-    total_cards = len(card_queue)
-    batch_size = int(config.get("batch_size", 5))
+    """Process all cards using concurrent workers (max 3)."""
+    global _card_queue, _total_cards
+    
+    _total_cards = len(card_list)
+    _card_queue = asyncio.Queue()
+    
+    # Populate the queue with (card, index) tuples
+    for index, card in enumerate(card_list, start=1):
+        await _card_queue.put((card, index))
+    
+    log_info(f"Processing {_total_cards} cards with 3 concurrent workers")
+    
+    # Shared results list
+    results_list: List[CardDict] = []
+    results_lock = asyncio.Lock()
+    
+    # Create 3 workers
+    workers = [
+        asyncio.create_task(_worker(i, browser, config, results_path, results_list, results_lock))
+        for i in range(1, 4)  # Workers 1, 2, 3
+    ]
+    
+    # Wait for all workers to complete
+    await asyncio.gather(*workers)
+    
+    # Calculate summary
     summary = {
-        "total": total_cards,
+        "total": _total_cards,
         "success": 0,
         "failed": 0,
         "three_ds": 0,
-        "cards_processed": [],
+        "cards_processed": results_list,
     }
-
-    interceptor = interceptor or NetworkInterceptor(
-        config.get("urls", {}).get("api_endpoint", "")
-    )
-
-    current_index = 1
-    for batch in _chunk_cards(card_queue, batch_size):
-        log_info(f"Processing batch starting at card {current_index}")
-        batch_results = await process_batch(
-            browser,
-            batch,
-            current_index,
-            total_cards,
-            interceptor,
-            config,
-            results_path,
-        )
-        for result in batch_results:
-            status = result.get("status")
-            if status == "[SUCCESS]":
-                summary["success"] += 1
-            elif status == "[3DS]":
-                summary["three_ds"] += 1
-            else:
-                summary["failed"] += 1
-        summary["cards_processed"].extend(batch_results)
-        current_index += len(batch)
+    
+    for result in results_list:
+        status = result.get("status")
+        if status == "[SUCCESS]":
+            summary["success"] += 1
+        elif status == "[3DS]":
+            summary["three_ds"] += 1
+        else:
+            summary["failed"] += 1
+    
     return summary

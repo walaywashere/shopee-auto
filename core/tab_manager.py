@@ -101,21 +101,28 @@ async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
         log_info(f"All elements loaded, waiting 1s before filling")
         await async_sleep(1)
         
-        # Now fill the form
-        log_info(f"Filling card number for card ending {card_last4}")
-        await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
+        # Fill the form TWICE for safety
+        for fill_attempt in [1, 2]:
+            log_info(f"Fill attempt {fill_attempt}/2 for card ending {card_last4}")
+            
+            log_info(f"Filling card number for card ending {card_last4}")
+            await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
+            
+            log_info(f"Filling expiry date for card ending {card_last4}")
+            await _fill_input(tab, xpaths.get("mmyy", ""), expiry, element_timeout, "expiry")
+            
+            log_info(f"Filling CVV for card ending {card_last4}")
+            await _fill_input(tab, xpaths.get("cvv", ""), card.get("cvv", ""), element_timeout, "cvv")
+            
+            if name:
+                log_info(f"Filling name for card ending {card_last4}")
+                await _fill_input(tab, xpaths.get("name", ""), name, element_timeout, "name")
+            
+            if fill_attempt == 1:
+                log_info(f"First fill complete, pausing before second fill")
+                await async_sleep(0.5)
         
-        log_info(f"Filling expiry date for card ending {card_last4}")
-        await _fill_input(tab, xpaths.get("mmyy", ""), expiry, element_timeout, "expiry")
-        
-        log_info(f"Filling CVV for card ending {card_last4}")
-        await _fill_input(tab, xpaths.get("cvv", ""), card.get("cvv", ""), element_timeout, "cvv")
-        
-        if name:
-            log_info(f"Filling name for card ending {card_last4}")
-            await _fill_input(tab, xpaths.get("name", ""), name, element_timeout, "name")
-        
-        log_info(f"All fields filled successfully for card ending {card_last4}")
+        log_info(f"All fields filled successfully (2x) for card ending {card_last4}")
     except Exception as exc:
         log_error(f"Failed to fill form for card ending {card_last4}: {exc}")
         raise
