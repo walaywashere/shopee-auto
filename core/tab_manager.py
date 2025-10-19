@@ -57,33 +57,35 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using CDP DOM.setAttributeValue - works in background without focus."""
+    """Fill an input field using JavaScript evaluation - works in background without focus."""
+    # Wait for element to exist
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
         raise RuntimeError(f"Element not found for {field_name or xpath}")
     
-    element = elements[0]
+    # Use JavaScript to set value and trigger events (works in background)
+    # Escape value for JavaScript string
+    escaped_value = value.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+    escaped_xpath = xpath.replace("\\", "\\\\").replace('"', '\\"')
     
-    # Set value attribute directly via CDP (no focus/click needed)
-    await tab.send(cdp.dom.set_attribute_value(
-        node_id=element.node_id,
-        name="value",
-        value=value
-    ))
-    
-    # Trigger input/change events so React/Vue frameworks recognize the change
     script = f"""
     (function() {{
-        const el = document.evaluate("{xpath}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        const el = document.evaluate("{escaped_xpath}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
         if (el) {{
+            el.value = "{escaped_value}";
             el.dispatchEvent(new Event('input', {{ bubbles: true }}));
             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            return true;
         }}
+        return false;
     }})();
     """
-    await tab.evaluate(script)
+    result = await tab.evaluate(script)
     
-    log_info(f"Filled {field_name or 'field'} with CDP DOM.setAttributeValue")
+    if not result:
+        raise RuntimeError(f"Failed to fill {field_name or xpath} - element not found during JS execution")
+    
+    log_info(f"Filled {field_name or 'field'} via JavaScript evaluation")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
