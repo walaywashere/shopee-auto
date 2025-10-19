@@ -46,10 +46,13 @@ def log_error(message: str) -> None:
     print(f"{_format_prefix('ERROR', Fore.RED)} {message}")
 
 
-def log_card_result(index: int, total: int, status: str, card_data: str) -> None:
+def log_card_result(index: int, total: int, status: str, card_data: str, reason: str = "") -> None:
     """Print standardized per-card result output."""
     color = Fore.CYAN if status == "[3DS]" else Fore.GREEN if status == "[SUCCESS]" else Fore.RED
-    print(f"{_format_prefix(f'{index}/{total}', color)} {status} {card_data}")
+    result_line = f"{_format_prefix(f'{index}/{total}', color)} {status} {card_data}"
+    if reason:
+        result_line += f" - {reason}"
+    print(result_line)
 
 
 def log_summary(summary: Dict[str, Any]) -> None:

@@ -141,7 +141,7 @@ async def _process_single_card(
             payload = payload or {}
             status, reason = await response_analyzer.determine_status(current_tab, payload, config)
             card_str = format_card_string(card)
-            log_card_result(card_index, total_cards, status, card_str)
+            log_card_result(card_index, total_cards, status, card_str, reason)
             if status == "[SUCCESS]":
                 await _append_success_result(results_path, card_str)
             card["status"] = status
@@ -173,7 +173,7 @@ async def _process_single_card(
     card["status"] = status
     card["error"] = reason
     card_str = format_card_string(card)
-    log_card_result(card_index, total_cards, status, card_str)
+    log_card_result(card_index, total_cards, status, card_str, reason)
     if between_cards:
         await async_sleep(between_cards)
     return card, current_tab
@@ -208,7 +208,7 @@ async def process_batch(
             card["status"] = "[FAILED]"
             card["error"] = str(exc)
             card_str = format_card_string(card)
-            log_card_result(index, total_cards, card["status"], card_str)
+            log_card_result(index, total_cards, card["status"], card_str, card["error"])
             results.append(card)
             reusable_tab_info = None
             index += 1

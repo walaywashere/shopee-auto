@@ -68,17 +68,46 @@ async def extract_result_message(tab, config: Dict[str, Any]) -> str:
     try:
         xpath = config.get("xpaths", {}).get("result_page_element", "")
         if not xpath:
+            log_info("No result_page_element xpath configured")
             return ""
         
+        log_info(f"Attempting to extract result message using xpath: {xpath}")
         elements = await tab.xpath(xpath, timeout=3)
         if not elements:
+            log_info("Result page element not found")
             return ""
         
-        # Get text content from the element
-        text = await elements[0].get_property("textContent")
-        return (text or "").strip()
+        log_info(f"Found {len(elements)} elements, extracting text...")
+        
+        # Try multiple methods to get text
+        text = None
+        
+        # Method 1: textContent property
+        try:
+            text = await elements[0].get_property("textContent")
+            log_info(f"Got text via textContent: {text}")
+        except Exception as e1:
+            log_info(f"textContent failed: {e1}")
+            
+            # Method 2: innerText property
+            try:
+                text = await elements[0].get_property("innerText")
+                log_info(f"Got text via innerText: {text}")
+            except Exception as e2:
+                log_info(f"innerText failed: {e2}")
+                
+                # Method 3: Direct text attribute
+                try:
+                    text = await elements[0].text
+                    log_info(f"Got text via .text: {text}")
+                except Exception as e3:
+                    log_info(f".text failed: {e3}")
+        
+        result = (text or "").strip()
+        log_info(f"Final extracted message: '{result}'")
+        return result
     except Exception as exc:
-        log_info(f"Could not extract result message: {exc}")
+        log_error(f"Failed to extract result message: {exc}")
         return ""
 
 
@@ -121,6 +150,18 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
             # Already on result page, extract and check the message
             result_message = await extract_result_message(tab, config)
             
+            # If extraction failed, try to get page content as fallback
+            if not result_message:
+                log_info("Direct extraction failed, trying page content fallback...")
+                page_content = await fetch_page_content(tab)
+                # Look for common success/failure patterns in the HTML
+                if any(keyword in page_content.lower() for keyword in ["linked", "successfully", "success"]):
+                    result_message = "Card successfully linked"
+                elif "fail" in page_content.lower() or "error" in page_content.lower():
+                    result_message = "Card validation failed"
+                else:
+                    result_message = "Unknown result"
+            
             if check_is_success(result_message):
                 log_info(f"Card addition succeeded: {result_message}")
                 return "[SUCCESS]", result_message or "Result page indicates success"
@@ -139,6 +180,18 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
 
     # Extract the result message from the result page element
     result_message = await extract_result_message(tab, config)
+    
+    # If extraction failed, try to get page content as fallback
+    if not result_message:
+        log_info("Direct extraction failed, trying page content fallback...")
+        page_content = await fetch_page_content(tab)
+        # Look for common success/failure patterns in the HTML
+        if any(keyword in page_content.lower() for keyword in ["linked", "successfully", "success"]):
+            result_message = "Card successfully linked"
+        elif "fail" in page_content.lower() or "error" in page_content.lower():
+            result_message = "Card validation failed"
+        else:
+            result_message = "Unknown result"
     
     if check_is_success(result_message):
         log_info(f"Card addition succeeded: {result_message}")
