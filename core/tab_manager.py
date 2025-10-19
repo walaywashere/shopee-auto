@@ -57,24 +57,115 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using element.apply() - no stale node_id issues."""
-    # Wait for element to exist
+    """Fill an input field without window focus using CDP insert_text with verification."""
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
         raise RuntimeError(f"Element not found for {field_name or xpath}")
-    
+
     element = elements[0]
-    
-    # Use element.apply() to set value and trigger events (all in one call, no stale IDs)
-    await element.apply("""
-        function(el, value) {
-            el.value = value;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
+
+    await element.scroll_into_view()
+
+    try:
+        await tab.send(cdp.emulation.set_focus_emulation_enabled(True))
+    except Exception:
+        pass
+
+    await element.apply("(el) => el.focus()")
+    await async_sleep(0.1)
+
+    await element.apply(
+        """
+        function(el) {
+            const proto = Object.getPrototypeOf(el);
+            const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
+            if (descriptor && typeof descriptor.set === 'function') {
+                descriptor.set.call(el, '');
+            } else {
+                el.value = '';
+            }
+            if (typeof el.dispatchEvent === 'function') {
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }
-    """, value)
-    
-    log_info(f"Filled {field_name or 'field'} with element.apply()")
+        """
+    )
+
+    await async_sleep(0.05)
+
+    await tab.send(cdp.input_.insert_text(value))
+
+    await async_sleep(0.05)
+
+    await element.apply(
+        """
+        function(el) {
+            if (typeof el.dispatchEvent === 'function') {
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        """
+    )
+
+    current_value = await element.apply(
+        """
+        function(el) {
+            return el && typeof el.value !== 'undefined' ? el.value : '';
+        }
+        """
+    )
+    current_value = current_value or ""
+
+    def _normalize(val: str) -> str:
+        base = val or ""
+        if field_name in {"card_number", "cvv"}:
+            return "".join(ch for ch in base if ch.isdigit())
+        return base.replace(" ", "")
+
+    expected_norm = _normalize(value)
+    actual_norm = _normalize(current_value)
+
+    if actual_norm != expected_norm:
+        log_info(
+            f"insert_text verification failed for {field_name or 'field'}; applying native setter fallback"
+        )
+        await element.apply(
+            """
+            function(el, value) {
+                const proto = Object.getPrototypeOf(el);
+                const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
+                if (descriptor && typeof descriptor.set === 'function') {
+                    descriptor.set.call(el, value);
+                } else {
+                    el.value = value;
+                }
+                if (typeof el.dispatchEvent === 'function') {
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+            """,
+            value,
+        )
+
+        current_value = await element.apply(
+            """
+            function(el) {
+                return el && typeof el.value !== 'undefined' ? el.value : '';
+            }
+            """
+        )
+        current_value = current_value or ""
+        actual_norm = _normalize(current_value)
+
+        if actual_norm != expected_norm:
+            raise RuntimeError(
+                f"Value verification failed for {field_name or xpath}; expected '{value}' got '{current_value}'"
+            )
+
+    log_info(f"Filled {field_name or 'field'} using focusless CDP insert_text")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
