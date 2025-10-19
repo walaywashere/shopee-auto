@@ -1,8 +1,8 @@
 {
   "browser": {
-    "headless": false
+    "headless": true
   },
-  "workers": 10,
+  "workers": 5,
   "timeouts": {
     "page_load": 10,
     "element_wait": 8,

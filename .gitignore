@@ -23,3 +23,5 @@ Thumbs.db
 cc*.txt
 ccs*.txt
 cca*.txt
+results*.txt
+failed*.txt
