@@ -148,9 +148,20 @@ async def _process_single_card(
                 log_info(f"Cleared {cleared} stale response(s) from interceptor queue")
             
             await tab_manager.submit_form(current_tab, config)
-            payload = await _await_target_response(interceptor, api_timeout)
-            payload = payload or {}
-            status, reason = await response_analyzer.determine_status(current_tab, payload, config)
+            
+            # Check for error popup immediately after submit (before waiting for API)
+            has_popup, popup_message = await response_analyzer.check_for_error_popup(current_tab, config)
+            if has_popup:
+                # Skip API wait, card is invalid
+                status = "[FAILED]"
+                reason = popup_message or "Invalid card detected via popup"
+                log_info(f"Error popup detected, skipping API wait: {reason}")
+            else:
+                # No popup, wait for API response
+                payload = await _await_target_response(interceptor, api_timeout)
+                payload = payload or {}
+                # Pass skip_popup_check=True since we already checked above
+                status, reason = await response_analyzer.determine_status(current_tab, payload, config, skip_popup_check=True)
             card_str = format_card_string(card)
             log_card_result(card_index, total_cards, status, card_str, reason)
             if status == "[SUCCESS]":

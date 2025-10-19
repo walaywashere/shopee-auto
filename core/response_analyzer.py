@@ -455,16 +455,17 @@ async def check_for_error_popup(tab, config: Dict[str, Any]) -> Tuple[bool, str]
         return False, ""
 
 
-async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, Any]) -> Tuple[str, str]:
+async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, Any], skip_popup_check: bool = False) -> Tuple[str, str]:
     """Determine final status label and reason."""
     # Log received payload for debugging
     log_info(f"Analyzing API payload: url={api_payload.get('url')}, has_body={bool(api_payload.get('body'))}")
     
-    # First check for error popup that appears immediately after submit
-    has_popup, popup_message = await check_for_error_popup(tab, config)
-    if has_popup:
-        log_info(f"Invalid card detected via error popup: {popup_message}")
-        return "[FAILED]", popup_message or "Invalid card number"
+    # Check for error popup only if not already checked by caller
+    if not skip_popup_check:
+        has_popup, popup_message = await check_for_error_popup(tab, config)
+        if has_popup:
+            log_info(f"Invalid card detected via error popup: {popup_message}")
+            return "[FAILED]", popup_message or "Invalid card number"
     
     # If body is available, check for 3DS challenge flag
     if api_payload.get("body") and is_three_ds(api_payload):
