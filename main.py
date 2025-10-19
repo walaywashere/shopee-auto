@@ -19,7 +19,7 @@ from core.browser_manager import (
 )
 from core.checker import process_all_batches
 from input.card_processor import build_card_queue
-from utils.helpers import load_config, log_error, log_info, log_summary
+from utils.helpers import load_config, log_error, log_info, log_summary, set_verbose
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -50,10 +50,19 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Do not close the browser automatically when the run completes",
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show detailed [INFO] logs during execution",
+    )
     return parser.parse_args()
 
 
 async def _async_main(args: argparse.Namespace) -> int:
+    # Set verbose mode based on CLI flag
+    set_verbose(args.verbose)
+    
     config_path = Path(args.config).resolve()
     cookies_path = Path(args.cookies).resolve()
     results_path = Path(args.results).resolve()

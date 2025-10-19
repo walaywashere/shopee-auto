@@ -12,6 +12,15 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
+# Global verbose flag
+_VERBOSE = False
+
+
+def set_verbose(enabled: bool) -> None:
+    """Enable or disable verbose INFO logging."""
+    global _VERBOSE
+    _VERBOSE = enabled
+
 
 def load_config(filepath: str) -> Dict[str, Any]:
     """Load JSON configuration from disk."""
@@ -28,7 +37,8 @@ def _format_prefix(prefix: str, color: str) -> str:
 
 def log_info(message: str) -> None:
     """Print a green informational log message."""
-    print(f"{_format_prefix('INFO', Fore.GREEN)} {message}")
+    if _VERBOSE:
+        print(f"{_format_prefix('INFO', Fore.GREEN)} {message}")
 
 
 def log_error(message: str) -> None:
