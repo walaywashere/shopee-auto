@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -33,7 +34,7 @@ def is_three_ds(api_payload: Dict[str, Any]) -> bool:
 
 
 async def wait_for_result_page(tab, config: Dict[str, Any]) -> bool:
-    """Wait until the result page loads or timeout occurs."""
+    """Wait until the result page loads and contains visible text."""
     timeouts = config.get("timeouts", {})
     target_url = config.get("urls", {}).get("result_page", "")
     xpath = config.get("xpaths", {}).get("result_page_element", "")
@@ -43,10 +44,12 @@ async def wait_for_result_page(tab, config: Dict[str, Any]) -> bool:
     while time.time() < end_time:
         try:
             if target_url and tab.url and target_url in tab.url:
-                return True
+                text = await _get_xpath_text(tab, xpath)
+                if text:
+                    return True
             if xpath:
-                elements = await tab.xpath(xpath, timeout=1)
-                if elements:
+                text = await _get_xpath_text(tab, xpath)
+                if text:
                     return True
         except Exception:
             pass
@@ -61,6 +64,33 @@ async def fetch_page_content(tab) -> str:
     except AttributeError:
         script = "return document.documentElement.outerHTML;"
         return await tab.evaluate(script)
+
+
+async def _get_xpath_text(tab, xpath: str) -> str:
+    if not xpath:
+        return ""
+    try:
+        elements = await tab.xpath(xpath, timeout=1)
+    except Exception:
+        return ""
+    if not elements:
+        return ""
+    element = elements[0]
+    methods = [
+        element.get_property("textContent"),
+        element.get_property("innerText"),
+        getattr(element, "text", None),
+    ]
+    for method in methods:
+        if method is None:
+            continue
+        try:
+            value = await method if hasattr(method, "__await__") else method
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        except Exception:
+            continue
+    return ""
 
 
 async def _collect_candidate_messages(tab) -> List[str]:
@@ -156,7 +186,7 @@ def _choose_best_message(messages: List[str]) -> str:
         return score
 
     best = max(messages, key=score_message)
-    return best.strip()
+    return _first_sentence(best.strip())
 
 
 def _extract_sentence_from_content(content: str) -> str:
@@ -196,9 +226,25 @@ def _extract_sentence_from_content(content: str) -> str:
                     kw in next_lower for kw in ["please", "contact", "use", "try", "within"]
                 ):
                     result = result + " " + next_sentence + "."
-            return result
+            return _first_sentence(result)
 
     return "Card validation failed"
+
+
+def _first_sentence(message: str) -> str:
+    if not message:
+        return ""
+    cleaned = message.strip()
+    if not cleaned:
+        return ""
+    match = re.match(r"(.+?[.!?])(?:\s|$)", cleaned)
+    if match:
+        return match.group(1).strip()
+    # Fallback: split manually
+    for delimiter in [".", "!", "?"]:
+        if delimiter in cleaned:
+            return cleaned.split(delimiter)[0].strip() + delimiter
+    return cleaned
 
 
 async def extract_result_message(tab, config: Dict[str, Any]) -> str:
@@ -220,7 +266,7 @@ async def extract_result_message(tab, config: Dict[str, Any]) -> str:
                 if text:
                     result = text.strip()
                     log_info(f"Extracted from txtNewline: '{result}'")
-                    return result
+                    return _first_sentence(result)
         except Exception as e:
             log_info(f"txtNewline extraction failed: {e}")
         
@@ -258,7 +304,7 @@ async def extract_result_message(tab, config: Dict[str, Any]) -> str:
             result = (text or "").strip()
             if result:
                 log_info(f"Final extracted message from xpath: '{result}'")
-                return result
+                return _first_sentence(result)
 
         # If we reach here, fallback to a broader DOM scan
         messages = await _collect_candidate_messages(tab)
@@ -266,7 +312,7 @@ async def extract_result_message(tab, config: Dict[str, Any]) -> str:
             chosen = _choose_best_message(messages)
             if chosen:
                 log_info(f"Extracted message from candidate scan: '{chosen}'")
-                return chosen
+                return _first_sentence(chosen)
 
         log_info("No result message extracted from DOM candidates")
         return ""
@@ -311,6 +357,7 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
         
         if result_page_url and result_page_url in current_url:
             log_info(f"Navigated to result page: {current_url}")
+            await wait_for_result_page(tab, config)
             # Already on result page, extract and check the message
             result_message = await extract_result_message(tab, config)
             
@@ -331,6 +378,7 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
                     else:
                         result_message = "Unknown result"
             
+            result_message = _first_sentence(result_message)
             if check_is_success(result_message):
                 log_info(f"Card addition succeeded: {result_message}")
                 return "[SUCCESS]", result_message or "Result page indicates success"
@@ -366,6 +414,7 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
             else:
                 result_message = "Unknown result"
     
+    result_message = _first_sentence(result_message)
     if check_is_success(result_message):
         log_info(f"Card addition succeeded: {result_message}")
         return "[SUCCESS]", result_message or "Result page indicates success"
