@@ -2,7 +2,7 @@
   "browser": {
     "headless": false
   },
-  "workers": 3,
+  "workers": 10,
   "timeouts": {
     "page_load": 10,
     "element_wait": 8,
