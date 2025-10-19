@@ -18,9 +18,9 @@ class NetworkInterceptor:
 
     def __init__(self, target_endpoint: str):
         self.target_endpoint = target_endpoint.lower()
-    self._pending_ids: Set[str] = set()
-    self._metadata: Dict[str, Dict[str, Any]] = {}
-    self._queue: asyncio.Queue = asyncio.Queue()
+        self._pending_ids: Set[str] = set()
+        self._metadata: Dict[str, Dict[str, Any]] = {}
+        self._queue: asyncio.Queue = asyncio.Queue()
 
     def track_request(self, request_id: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         self._pending_ids.add(request_id)
