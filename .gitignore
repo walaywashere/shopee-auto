@@ -30,3 +30,6 @@ cookies.txt
 # Environment variables
 .env
 .env.local
+
+# Tests
+tests/
