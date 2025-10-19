@@ -53,6 +53,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.processing_thread = None
         self.monitor_thread = None
         self.total_cards_count = 0
+        self.current_loop = None
+        self.current_task = None
         
         # Setup UI
         self.setup_ui()
@@ -370,8 +372,13 @@ class ShopeeCardCheckerGUI(ctk.CTk):
     def stop_processing(self):
         """Stop card processing"""
         self.is_processing = False
-        self.log_message("Stopping processing...", "WARNING")
+        self.log_message("Stop requested - cleaning up...", "WARNING")
         self.update_status("Stopping...")
+        
+        # Cancel the current async task if it exists
+        if self.current_task and not self.current_task.done():
+            self.current_task.cancel()
+            self.log_message("Processing task cancelled", "WARNING")
     
     def monitor_progress(self):
         """Monitor progress by watching result files"""
@@ -421,10 +428,16 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             # Create new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            self.current_loop = loop
             
-            # Run the async processing
-            loop.run_until_complete(self.process_cards())
+            # Create and store the task
+            self.current_task = loop.create_task(self.process_cards())
             
+            # Run until the task completes or is cancelled
+            loop.run_until_complete(self.current_task)
+            
+        except asyncio.CancelledError:
+            self.log_message("Processing cancelled by user", "WARNING")
         except Exception as e:
             self.log_message(f"Error during processing: {e}", "ERROR")
             log_error(f"GUI processing error: {e}")
@@ -434,6 +447,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
     
     async def process_cards(self):
         """Async card processing logic"""
+        browsers = []
         try:
             # Build card queue
             self.log_message(f"Loading cards from {self.card_file_path.get()}...", "INFO")
@@ -443,6 +457,10 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 self.log_message("No valid cards found!", "ERROR")
                 return
             
+            # Check if stopped
+            if not self.is_processing:
+                return
+            
             total_cards = len(card_list)
             self.total_cards_count = total_cards  # Store for progress monitoring
             self.after(0, lambda: self.total_label.configure(text=f"Total: {total_cards}"))
@@ -450,8 +468,12 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             
             # Launch browsers
             self.log_message(f"Launching {self.workers_count.get()} browser instances...", "INFO")
-            browsers = []
             for i in range(self.workers_count.get()):
+                # Check if stopped
+                if not self.is_processing:
+                    self.log_message("Stopping: Closing browsers...", "WARNING")
+                    break
+                    
                 self.log_message(f"Starting browser {i + 1}/{self.workers_count.get()}", "INFO")
                 browser = await init_browser(self.config)
                 cookies_loaded = await load_session_cookies(browser, self.cookies_file_path.get(), self.config)
@@ -469,6 +491,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                     await close_browser(browser, keep_open=False)
                     return
                 browsers.append(browser)
+            
+            # Check if stopped before processing
+            if not self.is_processing:
+                self.log_message("Stopping: Closing browsers...", "WARNING")
+                return
             
             self.log_message(f"Successfully initialized {len(browsers)} browser instances", "INFO")
             
@@ -497,21 +524,36 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.log_message(f"3DS: {summary.get('three_ds', 0)}", "INFO")
             self.log_message("=" * 50, "INFO")
             
-            # Close browsers
-            for browser in browsers:
-                await close_browser(browser, keep_open=False)
-            
+        except asyncio.CancelledError:
+            self.log_message("Processing cancelled - cleaning up...", "WARNING")
+            raise
         except Exception as e:
             self.log_message(f"Processing error: {e}", "ERROR")
             raise
+        finally:
+            # Always close browsers
+            if browsers:
+                self.log_message(f"Closing {len(browsers)} browser instances...", "INFO")
+                for browser in browsers:
+                    try:
+                        await close_browser(browser, keep_open=False)
+                    except:
+                        pass
     
     def processing_complete(self):
         """Called when processing is complete"""
         self.is_processing = False
+        self.current_task = None
+        self.current_loop = None
         self.start_button.configure(state="normal")
         self.stop_button.configure(state="disabled")
         self.update_status("Idle")
-        messagebox.showinfo("Complete", "Card processing completed!")
+        
+        # Only show completion message if not cancelled
+        if self.total_cards_count > 0:
+            messagebox.showinfo("Complete", "Card processing finished!")
+        else:
+            messagebox.showinfo("Stopped", "Processing was stopped.")
     
     def update_status(self, status: str):
         """Update status bar"""
