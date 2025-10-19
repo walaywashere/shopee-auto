@@ -44,8 +44,9 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         # Variables
         self.card_file_path = tk.StringVar()
         self.cookies_file_path = tk.StringVar(value="cookies.txt")
-        self.results_file_path = tk.StringVar(value="results.txt")
-        self.failed_file_path = tk.StringVar(value="failed.txt")
+        self.results_file_path = tk.StringVar(value="output/results.txt")
+        self.failed_file_path = tk.StringVar(value="output/failed.txt")
+        self.three_ds_file_path = tk.StringVar(value="output/3ds.txt")
         self.headless_mode = tk.BooleanVar(value=self.config.get("browser", {}).get("headless", True))
         self.workers_count = tk.IntVar(value=self.config.get("workers", 5))
         
@@ -574,21 +575,22 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 failed_count = 0
                 three_ds_count = 0
                 
-                # Count lines in results file and check for 3DS
+                # Count lines in results file (only successes)
                 if os.path.exists(self.results_file_path.get()):
                     with open(self.results_file_path.get(), 'r', encoding='utf-8') as f:
-                        for line in f:
-                            if line.strip():
-                                success_count += 1
-                                if '[3DS]' in line:
-                                    three_ds_count += 1
+                        success_count = sum(1 for line in f if line.strip())
                 
                 # Count lines in failed file
                 if os.path.exists(self.failed_file_path.get()):
                     with open(self.failed_file_path.get(), 'r', encoding='utf-8') as f:
                         failed_count = sum(1 for line in f if line.strip())
                 
-                processed = success_count + failed_count
+                # Count lines in 3DS file
+                if os.path.exists(self.three_ds_file_path.get()):
+                    with open(self.three_ds_file_path.get(), 'r', encoding='utf-8') as f:
+                        three_ds_count = sum(1 for line in f if line.strip())
+                
+                processed = success_count + failed_count + three_ds_count
                 
                 # Update UI in main thread
                 self.after(0, lambda sc=success_count: self.success_label.configure(text=f"✅ Success: {sc}"))
@@ -614,6 +616,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
     
     def run_processing(self):
         """Run the actual card processing (in separate thread)"""
+        loop = None
         try:
             # Create new event loop for this thread
             loop = asyncio.new_event_loop()
@@ -632,15 +635,35 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.log_message(f"Error during processing: {e}", "ERROR")
             log_error(f"GUI processing error: {e}")
         finally:
+            # Clean up any pending tasks
+            if loop and not loop.is_closed():
+                try:
+                    # Cancel all pending tasks
+                    pending = asyncio.all_tasks(loop)
+                    for task in pending:
+                        task.cancel()
+                    # Give tasks a chance to clean up
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                except Exception:
+                    pass
+                finally:
+                    loop.close()
+            
             # Reset UI state
             self.after(0, self.processing_complete)
     
     async def process_cards(self):
         """Async card processing logic"""
         import time
+        from pathlib import Path
         start_time = time.time()
         browsers = []
         try:
+            # Create output folder
+            output_dir = Path("output")
+            output_dir.mkdir(exist_ok=True)
+            self.log_message("Output folder ready", "INFO")
+            
             # Build card queue
             self.log_message(f"Loading cards from {self.card_file_path.get()}...", "INFO")
             card_list = build_card_queue(self.card_file_path.get())
@@ -700,7 +723,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 self.config,
                 self.results_file_path.get(),
                 self.failed_file_path.get(),
-                self.card_file_path.get()
+                self.card_file_path.get(),
+                self.three_ds_file_path.get()
             )
             
             # Update final stats

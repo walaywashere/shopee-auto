@@ -115,6 +115,16 @@ def _write_failed_line(failed_path: str, card_str: str, reason: str) -> None:
         file.write(f"{card_str} | {reason}\n")
 
 
+async def _append_three_ds_result(three_ds_path: str, card_str: str) -> None:
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _write_three_ds_line, three_ds_path, card_str)
+
+
+def _write_three_ds_line(three_ds_path: str, card_str: str) -> None:
+    with open(three_ds_path, "a", encoding="utf-8") as file:
+        file.write(f"{card_str}\n")
+
+
 async def _process_single_card(
     browser: Browser,
     prepared_tab,
@@ -124,6 +134,7 @@ async def _process_single_card(
     config: Dict[str, Any],
     results_path: str,
     failed_path: str,
+    three_ds_path: str,
     card_index: int,
     total_cards: int,
 ) -> Tuple[Dict[str, Any], Optional[Any]]:
@@ -169,6 +180,8 @@ async def _process_single_card(
                 # Send Telegram notification for successful card
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, send_telegram_notification, card_str, reason)
+            elif status == "[3DS]":
+                await _append_three_ds_result(three_ds_path, card_str)
             elif status == "[FAILED]":
                 await _append_failed_result(failed_path, card_str, reason)
             card["status"] = status
@@ -224,6 +237,7 @@ async def _worker(
     config: Dict[str, Any],
     results_path: str,
     failed_path: str,
+    three_ds_path: str,
     results_list: List[CardDict],
     results_lock: asyncio.Lock,
     card_file_path: str,
@@ -283,6 +297,7 @@ async def _worker(
                     config,
                     results_path,
                     failed_path,
+                    three_ds_path,
                     card_index,
                     _total_cards,
                 )
@@ -320,6 +335,7 @@ async def process_all_batches(
     results_path: str,
     failed_path: str,
     card_file_path: str,
+    three_ds_path: str = "3ds.txt",
 ) -> Dict[str, Any]:
     """Process all cards using concurrent workers, each with their own browser instance."""
     global _card_queue, _total_cards
@@ -350,6 +366,7 @@ async def process_all_batches(
                 config,
                 results_path,
                 failed_path,
+                three_ds_path,
                 results_list,
                 results_lock,
                 card_file_path,

@@ -38,13 +38,13 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--results",
-        default="results.txt",
-        help="Path to results output (default: results.txt)",
+        default="output/results.txt",
+        help="Path to results output (default: output/results.txt)",
     )
     parser.add_argument(
         "--failed",
-        default="failed.txt",
-        help="Path to failed cards output (default: failed.txt)",
+        default="output/failed.txt",
+        help="Path to failed cards output (default: output/failed.txt)",
     )
     parser.add_argument(
         "--headless",
@@ -128,6 +128,11 @@ async def _async_main(args: argparse.Namespace) -> int:
         
         log_info(f"All {num_workers} browser instances ready")
         
+        # Create output directory
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        log_info("Output folder ready")
+        
         results_path.parent.mkdir(parents=True, exist_ok=True)
         if results_path.exists():
             results_path.unlink()
@@ -137,6 +142,11 @@ async def _async_main(args: argparse.Namespace) -> int:
         if failed_path.exists():
             failed_path.unlink()
         failed_path.touch()
+        
+        three_ds_path = Path("output/3ds.txt").resolve()
+        if three_ds_path.exists():
+            three_ds_path.unlink()
+        three_ds_path.touch()
 
         summary = await process_all_batches(
             browsers,
@@ -146,6 +156,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             str(results_path),
             str(failed_path),
             str(card_path),
+            str(three_ds_path),
         )
         
         # Calculate duration
