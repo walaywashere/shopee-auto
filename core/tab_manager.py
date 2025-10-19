@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from nodriver import Browser
+from nodriver import Browser, cdp
 
 from utils.helpers import async_sleep, log_error, log_info
 
@@ -57,71 +57,46 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field with retry and verification."""
-    max_attempts = 3
+    """Fill an input field using CDP key events (works without window focus)."""
+    elements = await tab.xpath(xpath, timeout=timeout)
+    if not elements:
+        raise RuntimeError(f"Element not found for {field_name or xpath}")
     
-    for attempt in range(1, max_attempts + 1):
+    element = elements[0]
+    await element.scroll_into_view()
+    await async_sleep(0.2)
+    
+    # Click to activate the field
+    try:
+        await element.click()
+        await async_sleep(0.2)
+    except Exception:
+        pass
+    
+    # Clear existing value using Ctrl+A, Delete
+    try:
+        # Select all
+        await tab.send(cdp.input_.dispatch_key_event("keyDown", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))  # Ctrl
+        await tab.send(cdp.input_.dispatch_key_event("keyUp", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))
+        await async_sleep(0.1)
+        
+        # Delete
+        await tab.send(cdp.input_.dispatch_key_event("keyDown", key="Delete", code="Delete", windows_virtual_key_code=46))
+        await tab.send(cdp.input_.dispatch_key_event("keyUp", key="Delete", code="Delete", windows_virtual_key_code=46))
+        await async_sleep(0.1)
+    except Exception as e:
+        log_info(f"Could not clear {field_name}: {e}")
+    
+    # Send each character using CDP dispatch_key_event (works without focus)
+    for char in value:
         try:
-            elements = await tab.xpath(xpath, timeout=timeout)
-            if not elements:
-                if attempt < max_attempts:
-                    log_info(f"Element {field_name} not found (attempt {attempt}/{max_attempts}), retrying...")
-                    await async_sleep(0.5)
-                    continue
-                raise RuntimeError(f"Element not found for {field_name or xpath}")
-            
-            element = elements[0]
-            await element.scroll_into_view()
-            await async_sleep(0.3)
-            
-            # Click to activate the field
-            try:
-                await element.click()
-                await async_sleep(0.2)
-            except Exception:
-                pass
-            
-            # Focus the element
-            await element.focus()
-            await async_sleep(0.2)
-            
-            # Clear existing value
-            try:
-                await element.clear_input()
-                await async_sleep(0.2)
-            except Exception:
-                pass
-            
-            # Send the keys
-            await element.send_keys(value)
-            await async_sleep(0.3)
-            
-            # Verify the value was entered
-            try:
-                entered_value = await element.get_property("value")
-                if entered_value == value:
-                    log_info(f"Successfully filled {field_name or 'field'} (attempt {attempt})")
-                    return  # Success!
-                else:
-                    if attempt < max_attempts:
-                        log_info(f"Value mismatch for {field_name} (expected '{value}', got '{entered_value}'), retrying...")
-                        await async_sleep(0.5)
-                        continue
-                    else:
-                        log_error(f"Failed to verify {field_name}: expected '{value}', got '{entered_value}'")
-                        return  # Proceed anyway on last attempt
-            except Exception:
-                # If verification fails, assume it worked
-                log_info(f"Filled {field_name or 'field'} (could not verify)")
-                return
-                
-        except Exception as exc:
-            if attempt < max_attempts:
-                log_info(f"Error filling {field_name} (attempt {attempt}/{max_attempts}): {exc}, retrying...")
-                await async_sleep(0.5)
-            else:
-                log_error(f"Failed to fill {field_name} after {max_attempts} attempts: {exc}")
-                raise
+            await tab.send(cdp.input_.dispatch_key_event("char", text=char))
+        except Exception as e:
+            log_error(f"Failed to send character '{char}' to {field_name}: {e}")
+            raise
+    
+    await async_sleep(0.2)
+    log_info(f"Filled {field_name or 'field'} using CDP events")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
