@@ -1,193 +1,110 @@
 # Shopee Card Validation Automation
 
-A high-performance, parallel card validation system for Shopee.ph that automates credit card enrollment checking using multiple browser instances.
+Fast, parallel credit card validation system for Shopee.ph with automatic invalid card detection and cleanup.
 
-## 🚀 Features
+## ⚡ Quick Start
 
-- **Parallel Processing**: Multi-worker architecture with dedicated browser instances (default: 3 workers)
-- **Smart Status Detection**: Automatically identifies 3DS challenges, successful links, and failures
-- **Robust Form Filling**: CDP-based input without window focus requirements
-- **Network Intelligence**: Intercepts and analyzes API responses for accurate status determination
-- **Automatic Retry**: Up to 2 retries per card with intelligent error handling
-- **Session Management**: Persistent cookies for authenticated sessions
-- **Progress Tracking**: Real-time color-coded console output with card-by-card results
-- **Auto Cleanup**: Removes processed cards from input file to prevent reprocessing
-
-## 📋 Requirements
-
-- Python 3.8+
-- Chrome/Chromium browser
-- Required Python packages:
-  - `nodriver` - Undetected Chrome automation
-  - `colorama` - Colored terminal output
-
-## 🔧 Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/walaywashere/shopee-auto.git
-cd shopee-auto
-```
-
-2. Install dependencies:
-```bash
-pip install nodriver colorama
-```
-
-3. Prepare your session cookies in `cookies.txt` (header format):
-```
-name1=value1; name2=value2; ...
-```
-
-## 📝 Usage
-
-### Basic Usage
+### 1. Install Dependencies
 
 ```bash
-python main.py cards.txt
+pip install -r requirements.txt
 ```
 
-### Advanced Options
+### 2. Setup Cookies
 
-```bash
-python main.py cards.txt --config config.json --cookies cookies.txt --results results.txt --verbose
+Create a `cookies.txt` file with your Shopee session cookies in this format:
+```
+cookie_name1=value1; cookie_name2=value2; cookie_name3=value3
 ```
 
-### Command Line Arguments
+**How to get cookies:**
+1. Log in to shopee.ph in your browser
+2. Open Developer Tools (F12)
+3. Go to Application/Storage → Cookies → https://shopee.ph
+4. Copy all cookie values in the format above
 
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `card_file` | Path to input card file (required) | - |
-| `--config` | Configuration file path | `config.json` |
-| `--cookies` | Session cookies file | `cookies.txt` |
-| `--results` | Output file for successful cards | `results.txt` |
-| `--headless` | Run browser in headless mode | `False` |
-| `--keep-browser-open` | Keep browser open after completion | `False` |
-| `--verbose` / `-v` | Show detailed INFO logs | `False` |
+### 3. Prepare Card File
 
-## 📂 Project Structure
-
-```
-shopee-auto/
-├── main.py                     # CLI entry point
-├── config.json                 # Configuration (XPaths, timeouts, URLs)
-├── cookies.txt                 # Session authentication cookies
-├── results.txt                 # Output for successful cards
-├── PLAN.md                     # Detailed implementation plan
-├── README.md                   # This file
-│
-├── core/
-│   ├── browser_manager.py      # Browser lifecycle & session management
-│   ├── checker.py              # Queue-based parallel worker orchestration
-│   ├── tab_manager.py          # Form filling using CDP
-│   └── response_analyzer.py    # API response parsing & status detection
-│
-├── input/
-│   └── card_processor.py       # Card validation & file management
-│
-├── utils/
-│   └── helpers.py              # Logging, config loading, async utilities
-│
-└── tests/
-    ├── test_card_processor.py  # Card processing tests
-    ├── test_checker.py         # Checker orchestration tests
-    ├── test_extraction.py      # Response extraction tests
-    └── test_xpath_escape.py    # XPath escaping tests
-```
-
-## 💳 Card Input Format
-
-Cards should be formatted as: `card_number|MM|YY|CVV`
-
-**Example (`cards.txt`):**
+Create a text file (e.g., `cards.txt`) with one card per line:
 ```
 5210690378180718|03|28|764
 5363470078645012|09|29|466
 4162950195300712|03|27|017
 ```
 
-### Card Validation
+Format: `card_number|MM|YY|CVV`
 
-Each card is validated before processing:
-- **Luhn algorithm** checksum verification
-- Month: 01-12
-- Year: 2-digit, not expired
-- CVV: 3-4 digits
+### 4. Run
+
+```bash
+# Basic usage
+python main.py cards.txt
+
+# With headless mode (faster, no browser window)
+python main.py cards.txt --headless
+
+# With verbose logging
+python main.py cards.txt -v
+
+# Custom output files
+python main.py cards.txt --results success.txt --failed failures.txt
+```
+
+## � Output
+
+The script creates two output files:
+
+- **`results.txt`** - Successfully linked cards (format: `card|mm|yy|cvv`)
+- **`failed.txt`** - Failed cards with reasons (format: `card|mm|yy|cvv | reason`)
+
+## 🚀 Features
+
+- **Parallel Processing**: Multiple browser instances (configurable workers)
+- **Smart Detection**: Auto-detects 3DS, success, failures, and invalid cards
+- **Auto Cleanup**: Removes invalid/expired cards from input file
+- **Error Popup Detection**: Catches invalid card popups immediately
+- **Progress Tracking**: Real-time colored console output
+- **Headless Mode**: Run without visible browser windows
 
 ## ⚙️ Configuration
 
-Edit `config.json` to customize behavior:
+Edit `config.json` to customize:
 
 ```json
 {
-  "browser": {
-    "headless": false
-  },
-  "workers": 3,
+  "browser": { "headless": true },
+  "workers": 5,
   "timeouts": {
-    "page_load": 10,
-    "element_wait": 8,
-    "api_response": 15
+    "api_response": 15,
+    "error_popup_check": 1
   },
-  "delays": {
-    "between_cards": 0.5,
-    "retry_delay": 1
-  },
-  "batch_size": 5,
   "max_retries": 2,
   "cardholder_name": "roja kun"
 }
 ```
 
-### Configuration Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `browser.headless` | boolean | Run browser in headless mode |
-| `workers` | int | Number of parallel browser instances |
-| `timeouts.page_load` | int | Seconds to wait for page load |
-| `timeouts.element_wait` | int | Seconds to wait for form elements |
-| `timeouts.api_response` | int | Seconds to wait for API response |
-| `delays.between_cards` | float | Delay between card submissions |
-| `delays.retry_delay` | int | Delay before retrying failed card |
-| `batch_size` | int | Cards per batch (legacy setting) |
-| `max_retries` | int | Maximum retry attempts per card |
-| `cardholder_name` | string | Name used for all submissions |
+**Key Settings:**
+- `workers`: Number of parallel browser instances (1-10)
+- `headless`: true = faster, no browser window visible
+- `max_retries`: How many times to retry failed cards
 
 ## 📊 Status Indicators
 
-The system identifies three main statuses:
+| Status | Description |
+|--------|-------------|
+| `[SUCCESS]` 🟢 | Card successfully linked |
+| `[FAILED]` 🔴 | Card rejected (reason provided) |
+| `[3DS]` 🔵 | 3D Secure challenge (requires manual verification) |
 
-| Status | Color | Description |
-|--------|-------|-------------|
-| `[SUCCESS]` | 🟢 Green | Card successfully linked to account |
-| `[FAILED]` | 🔴 Red | Card rejected (with detailed reason) |
-| `[3DS]` | 🔵 Cyan | 3D Secure challenge triggered |
-
-## 📈 Output Format
-
-### Console Output
+## 📈 Example Output
 
 ```
-[INFO] Worker 1 processing card 1/100
+[INFO] Validated 100 cards out of 105
+[INFO] Processing 100 cards with 5 concurrent workers
 [1/100] [SUCCESS] 5210690378180718|03|28|764 - Card successfully linked
-[2/100] [FAILED] 5363470078645012|09|29|466 - Payment declined by bank
+[2/100] [FAILED] 5363470078645012|09|29|466 - Payment declined
 [3/100] [3DS] 4162950195300712|03|27|017 - Challenge flow triggered
-```
-
-### Results File
-
-Only successful cards are written to `results.txt`:
-```
-5210690378180718|03|28|764
-5496272026009998|04|27|444
-5363470075654959|02|29|633
-```
-
-### Summary
-
-After processing all cards:
-```
+...
 ==================== SUMMARY ====================
 Total Processed: 100
 Success: 45
@@ -196,151 +113,26 @@ Failed: 50
 =================================================
 ```
 
-## 🔍 How It Works
+## 🔧 Troubleshooting
 
-### 1. Initialization
-- Loads configuration and validates input file
-- Initializes multiple browser instances (one per worker)
-- Loads session cookies into each browser
-- Verifies Shopee session authentication
+**Session verification failed?**
+- Your cookies may be expired
+- Log in to shopee.ph and get fresh cookies
 
-### 2. Parallel Processing
-- Cards are added to a shared asyncio queue
-- Each worker pulls cards from the queue independently
-- Workers process cards concurrently for maximum speed
+**Browser crashes?**
+- Reduce workers in config.json
+- Try headless mode: `--headless`
 
-### 3. Card Processing
-Each card goes through:
-1. **Tab Creation**: Opens payment form in new tab
-2. **Network Interception**: Sets up CDP listeners for API responses
-3. **Form Filling**: Fills card number, expiry, CVV, and name using CDP
-4. **Submission**: Clicks submit button
-5. **Response Analysis**: Intercepts API response or analyzes result page
-6. **Status Determination**: Identifies SUCCESS/FAILED/3DS status
-
-### 4. Status Detection Logic
-
-```
-API Response Available?
-├─ Yes: Check "is_challenge_flow"
-│   ├─ true → [3DS]
-│   └─ false → Wait for result page → Analyze text → [SUCCESS] or [FAILED]
-└─ No (page navigated): Check current URL
-    ├─ Result page → Extract message → [SUCCESS] or [FAILED]
-    └─ Other → [3DS]
-```
-
-### 5. Error Handling
-- Retries failed attempts (up to 2 times)
-- Clears stale responses from queue
-- Logs detailed error information
-- Continues processing remaining cards
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-# Run all tests
-python -m unittest discover tests
-
-# Run specific test file
-python -m unittest tests.test_card_processor
-
-# Run with verbose output
-python -m unittest discover tests -v
-```
-
-## 🛠️ Development
-
-### Adding New Features
-
-1. **New Status Detection**: Modify `core/response_analyzer.py`
-2. **Form Field Changes**: Update XPaths in `config.json`
-3. **Timeout Adjustments**: Modify timeouts in `config.json`
-4. **New Validation Rules**: Edit `input/card_processor.py`
-
-### Debug Mode
-
-Enable verbose logging to see detailed execution flow:
-
-```bash
-python main.py cards.txt --verbose
-```
-
-## ⚠️ Important Notes
-
-1. **Session Cookies**: Ensure your `cookies.txt` contains valid, authenticated session cookies
-2. **Rate Limiting**: The system includes delays to avoid triggering rate limits
-3. **Proxy Support**: Currently not implemented, add if needed
-4. **Headless Mode**: Some sites detect headless browsers; use headed mode if issues occur
-5. **Card Security**: Handle card data responsibly and securely
-
-## 🔒 Security Considerations
-
-- Never commit `cookies.txt` or card files to version control
-- Use `.gitignore` to exclude sensitive files
-- Store card data encrypted at rest
-- Follow PCI DSS guidelines when handling card information
-- Rotate session cookies regularly
-
-## 📌 Performance
-
-- **Speed**: ~3x faster than sequential processing
-- **Throughput**: ~100-120 cards per hour (3 workers)
-- **Resource Usage**: ~500MB RAM per worker
-- **Browser Overhead**: Each worker requires a Chrome instance
-
-### Optimization Tips
-
-1. **Increase Workers**: More workers = faster processing (up to CPU limit)
-2. **Reduce Delays**: Lower `between_cards` delay (risk: rate limiting)
-3. **Headless Mode**: Slightly faster, uses less resources
-4. **SSD Storage**: Faster for Chrome profile operations
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"Cookie file not found"**
-- Ensure `cookies.txt` exists in project root
-- Check file path in command line arguments
-
-**"Session verification failed"**
-- Cookies may be expired or invalid
-- Log in to Shopee.ph and extract fresh cookies
-
-**"Element not found" errors**
-- Shopee may have updated their UI
-- Update XPaths in `config.json`
-- Run with `--verbose` to see detailed logs
-
-**Browser crashes**
-- Reduce number of workers
-- Increase system RAM
-- Close other applications
-
-**Rate limiting**
-- Increase `delays.between_cards`
-- Reduce number of workers
-- Add proxy rotation (requires code modification)
+**Cards not processing?**
+- Check card format: `number|MM|YY|CVV`
+- Ensure cards are not expired
+- Invalid cards are auto-removed from input file
 
 ## 📄 License
 
-This project is for educational purposes only. Use responsibly and in accordance with Shopee's Terms of Service.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📧 Contact
-
-Project Link: [https://github.com/walaywashere/shopee-auto](https://github.com/walaywashere/shopee-auto)
+Educational purposes only. Use responsibly and in accordance with Shopee's Terms of Service.
 
 ---
 
 **⚠️ Disclaimer**: This tool is for educational and testing purposes only. Users are responsible for ensuring their usage complies with applicable laws and terms of service.
+````

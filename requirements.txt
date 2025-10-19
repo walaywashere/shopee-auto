@@ -1,0 +1,2 @@
+nodriver>=0.34
+colorama>=0.4.6
