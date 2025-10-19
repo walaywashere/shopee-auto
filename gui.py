@@ -89,6 +89,18 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         """Create header section"""
         header_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=("gray85", "gray15"))
         header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+        header_frame.grid_columnconfigure(0, weight=1)
+        
+        # Settings button (top right)
+        settings_button = ctk.CTkButton(
+            header_frame,
+            text="⚙️ Settings",
+            command=self.open_settings,
+            width=100,
+            height=30,
+            font=ctk.CTkFont(size=12)
+        )
+        settings_button.place(relx=0.98, rely=0.1, anchor="ne")
         
         # Title
         title_label = ctk.CTkLabel(
@@ -260,7 +272,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         # Stats frame
         stats_frame = ctk.CTkFrame(progress_frame, fg_color="transparent")
         stats_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
-        stats_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         self.total_label = ctk.CTkLabel(stats_frame, text="Total: 0", font=ctk.CTkFont(size=12, weight="bold"))
         self.total_label.grid(row=0, column=0, padx=5)
@@ -268,8 +280,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.success_label = ctk.CTkLabel(stats_frame, text="✅ Success: 0", font=ctk.CTkFont(size=12, weight="bold"), text_color="green")
         self.success_label.grid(row=0, column=1, padx=5)
         
+        self.three_ds_label = ctk.CTkLabel(stats_frame, text="🔵 3DS: 0", font=ctk.CTkFont(size=12, weight="bold"), text_color="cyan")
+        self.three_ds_label.grid(row=0, column=2, padx=5)
+        
         self.failed_label = ctk.CTkLabel(stats_frame, text="❌ Failed: 0", font=ctk.CTkFont(size=12, weight="bold"), text_color="red")
-        self.failed_label.grid(row=0, column=2, padx=5)
+        self.failed_label.grid(row=0, column=3, padx=5)
     
     def create_log_section(self, parent):
         """Create log display section"""
@@ -320,6 +335,174 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         )
         if filename:
             self.cookies_file_path.set(filename)
+    
+    def open_settings(self):
+        """Open settings dialog for Telegram configuration"""
+        settings_window = ctk.CTkToplevel(self)
+        settings_window.title("Settings - Telegram Configuration")
+        settings_window.geometry("550x400")
+        settings_window.transient(self)
+        settings_window.grab_set()
+        
+        # Load current .env values
+        env_path = Path(__file__).parent / ".env"
+        current_token = ""
+        current_chat_id = ""
+        
+        if env_path.exists():
+            with open(env_path, 'r') as f:
+                for line in f:
+                    if line.startswith('TELEGRAM_BOT_TOKEN='):
+                        current_token = line.split('=', 1)[1].strip()
+                    elif line.startswith('TELEGRAM_CHAT_ID='):
+                        current_chat_id = line.split('=', 1)[1].strip()
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            settings_window,
+            text="⚙️ Telegram Bot Configuration",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title_label.pack(pady=20)
+        
+        # Info label
+        info_label = ctk.CTkLabel(
+            settings_window,
+            text="Configure your Telegram bot to receive notifications during processing.",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray40", "gray60")
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Form frame
+        form_frame = ctk.CTkFrame(settings_window)
+        form_frame.pack(fill="both", expand=True, padx=30, pady=10)
+        
+        # Bot Token
+        ctk.CTkLabel(
+            form_frame,
+            text="Bot Token:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(20, 5))
+        
+        token_entry = ctk.CTkEntry(
+            form_frame,
+            placeholder_text="Enter your Telegram bot token...",
+            width=450
+        )
+        token_entry.pack(padx=20, pady=(0, 10))
+        if current_token:
+            token_entry.insert(0, current_token)
+        
+        ctk.CTkLabel(
+            form_frame,
+            text="Get your bot token from @BotFather on Telegram",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60")
+        ).pack(anchor="w", padx=20, pady=(0, 15))
+        
+        # Chat ID
+        ctk.CTkLabel(
+            form_frame,
+            text="Chat ID:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(10, 5))
+        
+        chat_id_entry = ctk.CTkEntry(
+            form_frame,
+            placeholder_text="Enter your Telegram chat ID...",
+            width=450
+        )
+        chat_id_entry.pack(padx=20, pady=(0, 10))
+        if current_chat_id:
+            chat_id_entry.insert(0, current_chat_id)
+        
+        ctk.CTkLabel(
+            form_frame,
+            text="Get your chat ID from @userinfobot or @getidsbot",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60")
+        ).pack(anchor="w", padx=20, pady=(0, 20))
+        
+        # Status label
+        status_label = ctk.CTkLabel(
+            form_frame,
+            text="",
+            font=ctk.CTkFont(size=12)
+        )
+        status_label.pack(pady=10)
+        
+        # Buttons frame
+        button_frame = ctk.CTkFrame(settings_window, fg_color="transparent")
+        button_frame.pack(pady=20)
+        
+        def save_settings():
+            """Save settings to .env file"""
+            token = token_entry.get().strip()
+            chat_id = chat_id_entry.get().strip()
+            
+            if not token and not chat_id:
+                status_label.configure(text="⚠️ Both fields are empty", text_color="orange")
+                return
+            
+            try:
+                # Write to .env file
+                env_content = ""
+                if token:
+                    env_content += f"TELEGRAM_BOT_TOKEN={token}\n"
+                if chat_id:
+                    env_content += f"TELEGRAM_CHAT_ID={chat_id}\n"
+                
+                with open(env_path, 'w') as f:
+                    f.write("# Telegram Bot Configuration\n")
+                    f.write(env_content)
+                
+                status_label.configure(text="✅ Settings saved successfully!", text_color="green")
+                self.after(1500, settings_window.destroy)
+                
+            except Exception as e:
+                status_label.configure(text=f"❌ Error saving: {str(e)}", text_color="red")
+        
+        def clear_settings():
+            """Clear Telegram settings"""
+            if env_path.exists():
+                try:
+                    env_path.unlink()
+                    status_label.configure(text="✅ Settings cleared!", text_color="green")
+                    token_entry.delete(0, 'end')
+                    chat_id_entry.delete(0, 'end')
+                    self.after(1500, settings_window.destroy)
+                except Exception as e:
+                    status_label.configure(text=f"❌ Error: {str(e)}", text_color="red")
+        
+        # Buttons
+        ctk.CTkButton(
+            button_frame,
+            text="💾 Save",
+            command=save_settings,
+            width=120,
+            height=35,
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkButton(
+            button_frame,
+            text="🗑️ Clear",
+            command=clear_settings,
+            width=120,
+            height=35,
+            fg_color="red",
+            hover_color="darkred"
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkButton(
+            button_frame,
+            text="❌ Cancel",
+            command=settings_window.destroy,
+            width=120,
+            height=35
+        ).pack(side="left", padx=10)
     
     def log_message(self, message: str, level: str = "INFO"):
         """Add message to log textbox"""
@@ -389,11 +572,16 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             try:
                 success_count = 0
                 failed_count = 0
+                three_ds_count = 0
                 
-                # Count lines in results file
+                # Count lines in results file and check for 3DS
                 if os.path.exists(self.results_file_path.get()):
                     with open(self.results_file_path.get(), 'r', encoding='utf-8') as f:
-                        success_count = sum(1 for line in f if line.strip())
+                        for line in f:
+                            if line.strip():
+                                success_count += 1
+                                if '[3DS]' in line:
+                                    three_ds_count += 1
                 
                 # Count lines in failed file
                 if os.path.exists(self.failed_file_path.get()):
@@ -403,8 +591,9 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 processed = success_count + failed_count
                 
                 # Update UI in main thread
-                self.after(0, lambda: self.success_label.configure(text=f"✅ Success: {success_count}"))
-                self.after(0, lambda: self.failed_label.configure(text=f"❌ Failed: {failed_count}"))
+                self.after(0, lambda sc=success_count: self.success_label.configure(text=f"✅ Success: {sc}"))
+                self.after(0, lambda tds=three_ds_count: self.three_ds_label.configure(text=f"🔵 3DS: {tds}"))
+                self.after(0, lambda fc=failed_count: self.failed_label.configure(text=f"❌ Failed: {fc}"))
                 
                 # Update progress bar if we know total
                 if self.total_cards_count > 0:
@@ -516,6 +705,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             
             # Update final stats
             self.after(0, lambda: self.success_label.configure(text=f"✅ Success: {summary['success']}"))
+            self.after(0, lambda: self.three_ds_label.configure(text=f"🔵 3DS: {summary.get('three_ds', 0)}"))
             self.after(0, lambda: self.failed_label.configure(text=f"❌ Failed: {summary['failed']}"))
             self.after(0, lambda: self.progress_bar.set(1.0))
             
