@@ -57,36 +57,71 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using JavaScript to work without focus."""
-    elements = await tab.xpath(xpath, timeout=timeout)
-    if not elements:
-        raise RuntimeError(f"Element not found for {field_name or xpath}")
+    """Fill an input field with retry and verification."""
+    max_attempts = 3
     
-    element = elements[0]
-    await element.scroll_into_view()
-    
-    # Use JavaScript to set value directly - works even when window is not focused
-    try:
-        # Set the value property
-        await element.apply("""
-            function(el, value) {
-                el.value = value;
-                // Trigger input event so the page's JavaScript knows the value changed
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        """, value)
-        log_info(f"Filled {field_name or 'field'} with JavaScript")
-    except Exception as e:
-        # Fallback to traditional method
-        log_info(f"JavaScript fill failed for {field_name}, trying traditional method: {e}")
-        await element.focus()
+    for attempt in range(1, max_attempts + 1):
         try:
-            await element.clear_input()
-        except Exception:
-            pass
-        await element.send_keys(value)
-        log_info(f"Filled {field_name or 'field'} with send_keys")
+            elements = await tab.xpath(xpath, timeout=timeout)
+            if not elements:
+                if attempt < max_attempts:
+                    log_info(f"Element {field_name} not found (attempt {attempt}/{max_attempts}), retrying...")
+                    await async_sleep(0.5)
+                    continue
+                raise RuntimeError(f"Element not found for {field_name or xpath}")
+            
+            element = elements[0]
+            await element.scroll_into_view()
+            await async_sleep(0.3)
+            
+            # Click to activate the field
+            try:
+                await element.click()
+                await async_sleep(0.2)
+            except Exception:
+                pass
+            
+            # Focus the element
+            await element.focus()
+            await async_sleep(0.2)
+            
+            # Clear existing value
+            try:
+                await element.clear_input()
+                await async_sleep(0.2)
+            except Exception:
+                pass
+            
+            # Send the keys
+            await element.send_keys(value)
+            await async_sleep(0.3)
+            
+            # Verify the value was entered
+            try:
+                entered_value = await element.get_property("value")
+                if entered_value == value:
+                    log_info(f"Successfully filled {field_name or 'field'} (attempt {attempt})")
+                    return  # Success!
+                else:
+                    if attempt < max_attempts:
+                        log_info(f"Value mismatch for {field_name} (expected '{value}', got '{entered_value}'), retrying...")
+                        await async_sleep(0.5)
+                        continue
+                    else:
+                        log_error(f"Failed to verify {field_name}: expected '{value}', got '{entered_value}'")
+                        return  # Proceed anyway on last attempt
+            except Exception:
+                # If verification fails, assume it worked
+                log_info(f"Filled {field_name or 'field'} (could not verify)")
+                return
+                
+        except Exception as exc:
+            if attempt < max_attempts:
+                log_info(f"Error filling {field_name} (attempt {attempt}/{max_attempts}): {exc}, retrying...")
+                await async_sleep(0.5)
+            else:
+                log_error(f"Failed to fill {field_name} after {max_attempts} attempts: {exc}")
+                raise
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
