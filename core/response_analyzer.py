@@ -63,6 +63,34 @@ async def fetch_page_content(tab) -> str:
         return await tab.evaluate(script)
 
 
+async def extract_result_message(tab, config: Dict[str, Any]) -> str:
+    """Extract the result message from the result page element."""
+    try:
+        xpath = config.get("xpaths", {}).get("result_page_element", "")
+        if not xpath:
+            return ""
+        
+        elements = await tab.xpath(xpath, timeout=3)
+        if not elements:
+            return ""
+        
+        # Get text content from the element
+        text = await elements[0].get_property("textContent")
+        return (text or "").strip()
+    except Exception as exc:
+        log_info(f"Could not extract result message: {exc}")
+        return ""
+
+
+def check_is_success(text: str) -> bool:
+    """Check if the result text indicates success."""
+    if not text:
+        return False
+    text_lower = text.lower()
+    success_keywords = ["linked", "successfully", "success"]
+    return any(keyword in text_lower for keyword in success_keywords)
+
+
 def check_add_card_failed(page_content: str) -> bool:
     """Check if the result page indicates a failure."""
     if not page_content:
@@ -90,13 +118,15 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
         
         if result_page_url and result_page_url in current_url:
             log_info(f"Navigated to result page: {current_url}")
-            # Already on result page, check content
-            page_content = await fetch_page_content(tab)
-            if check_add_card_failed(page_content):
-                log_info("Detected failure text on result page")
-                return "[FAILED]", "Result page indicates failure"
-            log_info("Card addition succeeded")
-            return "[SUCCESS]", "Result page indicates success"
+            # Already on result page, extract and check the message
+            result_message = await extract_result_message(tab, config)
+            
+            if check_is_success(result_message):
+                log_info(f"Card addition succeeded: {result_message}")
+                return "[SUCCESS]", result_message or "Result page indicates success"
+            else:
+                log_info(f"Card addition failed: {result_message}")
+                return "[FAILED]", result_message or "Result page indicates failure"
         else:
             # Not on result page, likely 3DS or still on payment form
             log_info(f"Page navigated but not to result page (URL: {current_url}), likely 3DS challenge")
@@ -107,10 +137,12 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
         log_error("Timeout waiting for result page")
         return "[FAILED]", "Result page timeout"
 
-    page_content = await fetch_page_content(tab)
-    if check_add_card_failed(page_content):
-        log_info("Detected failure text on result page")
-        return "[FAILED]", "Result page indicates failure"
-
-    log_info("Card addition succeeded")
-    return "[SUCCESS]", "Result page indicates success"
+    # Extract the result message from the result page element
+    result_message = await extract_result_message(tab, config)
+    
+    if check_is_success(result_message):
+        log_info(f"Card addition succeeded: {result_message}")
+        return "[SUCCESS]", result_message or "Result page indicates success"
+    else:
+        log_info(f"Card addition failed: {result_message}")
+        return "[FAILED]", result_message or "Result page indicates failure"

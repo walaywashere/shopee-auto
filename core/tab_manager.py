@@ -123,10 +123,24 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
                 entered_value = await element.get_property("value")
                 if entered_value != value:
                     if attempt < max_retries:
-                        log_info(f"Value mismatch for {field_name} (expected '{value}', got '{entered_value}'), retrying...")
-                        await async_sleep(0.5)
-                        continue
-                    log_error(f"Failed to verify input for {field_name}: expected '{value}', got '{entered_value}'")
+                        log_info(f"Value mismatch for {field_name} (expected '{value}', got '{entered_value}'), trying character-by-character...")
+                        
+                        # Try alternative: type character by character
+                        await element.clear_input()
+                        await async_sleep(0.2)
+                        for char in value:
+                            await element.send_keys(char)
+                            await async_sleep(0.05)  # Small delay between characters
+                        await async_sleep(0.3)
+                        
+                        # Verify again
+                        entered_value = await element.get_property("value")
+                        if entered_value != value:
+                            log_info(f"Still mismatch after char-by-char (got '{entered_value}'), will retry...")
+                            await async_sleep(0.5)
+                            continue
+                    else:
+                        log_error(f"Failed to verify input for {field_name}: expected '{value}', got '{entered_value}'")
             except Exception:
                 pass  # Verification failed, but input might still be OK
             
@@ -155,19 +169,27 @@ async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
 
     card_last4 = card.get("number", "")[-4:]
     
+    # Wait for form to be interactive by checking if card number field is present
+    log_info(f"Waiting for form to be interactive for card ending {card_last4}")
+    await async_sleep(1)
+    
     try:
         log_info(f"Filling card number for card ending {card_last4}")
         await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
+        await async_sleep(0.3)  # Small delay between fields
         
         log_info(f"Filling expiry date for card ending {card_last4}")
         await _fill_input(tab, xpaths.get("mmyy", ""), expiry, element_timeout, "expiry")
+        await async_sleep(0.3)
         
         log_info(f"Filling CVV for card ending {card_last4}")
         await _fill_input(tab, xpaths.get("cvv", ""), card.get("cvv", ""), element_timeout, "cvv")
+        await async_sleep(0.3)
         
         if name:
             log_info(f"Filling name for card ending {card_last4}")
             await _fill_input(tab, xpaths.get("name", ""), name, element_timeout, "name")
+            await async_sleep(0.3)
         
         log_info(f"All fields filled successfully for card ending {card_last4}")
     except Exception as exc:
