@@ -80,9 +80,11 @@ async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, A
         log_info("3DS challenge detected via API response")
         return "[3DS]", "Challenge flow triggered"
 
-    # If body unavailable (page navigated), check current tab URL to determine where it went
+    # If body unavailable (page navigated), wait a bit then check current tab URL
     if api_payload.get("body_unavailable"):
-        log_info("Response body unavailable - checking current page URL")
+        log_info("Response body unavailable - waiting for navigation to complete")
+        await async_sleep(2)  # Wait for redirect to complete
+        
         current_url = (tab.url or "").lower()
         result_page_url = config.get("urls", {}).get("result_page", "").lower()
         
