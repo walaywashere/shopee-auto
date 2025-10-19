@@ -57,22 +57,33 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using CDP (Chrome DevTools Protocol) - no clicking needed."""
+    """Fill an input field using CDP DOM.setAttributeValue - works in background without focus."""
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
         raise RuntimeError(f"Element not found for {field_name or xpath}")
     
     element = elements[0]
     
-    # Focus element using CDP (no click)
-    await tab.send(cdp.dom.focus(backend_node_id=element.backend_node_id))
-    await async_sleep(0.2)  # Wait for focus
+    # Set value attribute directly via CDP (no focus/click needed)
+    await tab.send(cdp.dom.set_attribute_value(
+        node_id=element.node_id,
+        name="value",
+        value=value
+    ))
     
-    # Type each character using CDP
-    for char in value:
-        await tab.send(cdp.input_.dispatch_key_event("char", text=char))
+    # Trigger input/change events so React/Vue frameworks recognize the change
+    script = f"""
+    (function() {{
+        const el = document.evaluate("{xpath}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (el) {{
+            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        }}
+    }})();
+    """
+    await tab.evaluate(script)
     
-    log_info(f"Filled {field_name or 'field'} with CDP")
+    log_info(f"Filled {field_name or 'field'} with CDP DOM.setAttributeValue")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
