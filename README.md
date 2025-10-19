@@ -23,7 +23,34 @@ cookie_name1=value1; cookie_name2=value2; cookie_name3=value3
 3. Go to Application/Storage → Cookies → https://shopee.ph
 4. Copy all cookie values in the format above
 
-### 3. Prepare Card File
+### 3. Setup Telegram Notifications (Optional)
+
+To receive instant notifications for successful cards via Telegram:
+
+1. **Create a Telegram Bot:**
+   - Open Telegram and chat with [@BotFather](https://t.me/BotFather)
+   - Send `/newbot` and follow the instructions
+   - Copy the Bot Token provided
+
+2. **Get Your Chat ID:**
+   - Start a chat with your bot
+   - Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
+   - Find your `chat_id` in the JSON response
+
+3. **Create `.env` file:**
+   ```bash
+   cp .env.example .env
+   ```
+   
+4. **Edit `.env` and add your credentials:**
+   ```env
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+   TELEGRAM_CHAT_ID=123456789
+   ```
+
+**Note:** Telegram notifications are optional. The script will work without them.
+
+### 4. Prepare Card File
 
 Create a text file (e.g., `cards.txt`) with one card per line:
 ```
@@ -34,7 +61,7 @@ Create a text file (e.g., `cards.txt`) with one card per line:
 
 Format: `card_number|MM|YY|CVV`
 
-### 4. Run
+### 5. Run
 
 ```bash
 # Basic usage
@@ -65,6 +92,7 @@ The script creates two output files:
 - **Error Popup Detection**: Catches invalid card popups immediately
 - **Progress Tracking**: Real-time colored console output
 - **Headless Mode**: Run without visible browser windows
+- **Telegram Notifications**: Instant alerts for successful cards (optional)
 
 ## ⚙️ Configuration
 
@@ -95,6 +123,33 @@ Edit `config.json` to customize:
 | `[SUCCESS]` 🟢 | Card successfully linked |
 | `[FAILED]` 🔴 | Card rejected (reason provided) |
 | `[3DS]` 🔵 | 3D Secure challenge (requires manual verification) |
+
+## 📱 Telegram Notifications
+
+When configured, successful cards trigger instant Telegram messages with:
+
+- ✅ **Success Badge**
+- 💳 **Full Card Details** (number, expiry, CVV)
+- 🔒 **Masked Version** (for security)
+- 📝 **Response Message** from Shopee
+- 🕒 **Timestamp**
+
+**Example Message:**
+```
+✅ Card Validation Success
+━━━━━━━━━━━━━━━━━━━━
+
+💳 Card Number: 5210690378180718
+🔒 Masked: 521069******0718
+📅 Expiry: 03/28
+🔐 CVV: 764
+
+📝 Response:
+This card is now active for all payments.
+
+━━━━━━━━━━━━━━━━━━━━
+🕒 2025-10-19 14:32:15
+```
 
 ## 📈 Example Output
 

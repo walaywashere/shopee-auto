@@ -406,7 +406,14 @@ def check_is_success(text: str) -> bool:
     if not text:
         return False
     text_lower = text.lower()
-    success_keywords = ["linked", "successfully", "success"]
+    success_keywords = [
+        "linked",
+        "successfully",
+        "success",
+        "active for all payments",
+        "card is now active",
+        "activated"
+    ]
     return any(keyword in text_lower for keyword in success_keywords)
 
 

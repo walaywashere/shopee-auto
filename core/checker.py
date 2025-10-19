@@ -17,6 +17,7 @@ from utils.helpers import (
     log_error,
     log_info,
 )
+from utils.telegram_sender import send_telegram_notification, is_telegram_configured
 
 CardDict = Dict[str, Any]
 
@@ -154,6 +155,9 @@ async def _process_single_card(
             log_card_result(card_index, total_cards, status, card_str, reason)
             if status == "[SUCCESS]":
                 await _append_success_result(results_path, card_str)
+                # Send Telegram notification for successful card
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, send_telegram_notification, card_str, reason)
             elif status == "[FAILED]":
                 await _append_failed_result(failed_path, card_str, reason)
             card["status"] = status

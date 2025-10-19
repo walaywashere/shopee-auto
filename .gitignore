@@ -26,3 +26,7 @@ cca*.txt
 results*.txt
 failed*.txt
 cookies.txt
+
+# Environment variables
+.env
+.env.local
