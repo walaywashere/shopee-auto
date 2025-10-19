@@ -94,16 +94,21 @@ python main.py cards.txt --headless
 # With verbose logging
 python main.py cards.txt -v
 
-# Custom output files
-python main.py cards.txt --results success.txt --failed failures.txt
+# Custom output paths (default: output/results.txt, output/failed.txt)
+python main.py cards.txt --results custom/success.txt --failed custom/failures.txt
 ```
 
-## � Output
+**Note:** Output files are cleared at the start of each session to prevent data mixing.
 
-The script creates two output files:
+## 📊 Output
 
-- **`results.txt`** - Successfully linked cards (format: `card|mm|yy|cvv`)
-- **`failed.txt`** - Failed cards with reasons (format: `card|mm|yy|cvv | reason`)
+The script creates three output files in the `output/` folder:
+
+- **`output/results.txt`** - Successfully linked cards (format: `card|mm|yy|cvv`)
+- **`output/failed.txt`** - Failed cards with reasons (format: `card|mm|yy|cvv | reason`)
+- **`output/3ds.txt`** - Cards requiring 3D Secure verification (format: `card|mm|yy|cvv`)
+
+**⚠️ Important:** All output files are **automatically cleared** at the start of each new processing session to ensure fresh results.
 
 ## 🚀 Features
 
