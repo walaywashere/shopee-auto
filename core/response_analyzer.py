@@ -39,18 +39,25 @@ async def wait_for_result_page(tab, config: Dict[str, Any]) -> bool:
     target_url = config.get("urls", {}).get("result_page", "")
     xpath = config.get("xpaths", {}).get("result_page_element", "")
     timeout = float(timeouts.get("page_load", 10))
+    stabilization_delay = 0.5
     end_time = time.time() + timeout
 
     while time.time() < end_time:
         try:
             if target_url and tab.url and target_url in tab.url:
-                text = await _get_xpath_text(tab, xpath)
-                if text:
-                    return True
+                text = await _get_xpath_text_js(tab, xpath)
+                if text and not _is_loading_placeholder(text):
+                    await async_sleep(stabilization_delay)
+                    confirm_text = await _get_xpath_text_js(tab, xpath)
+                    if confirm_text and not _is_loading_placeholder(confirm_text):
+                        return True
             if xpath:
-                text = await _get_xpath_text(tab, xpath)
-                if text:
-                    return True
+                text = await _get_xpath_text_js(tab, xpath)
+                if text and not _is_loading_placeholder(text):
+                    await async_sleep(stabilization_delay)
+                    confirm_text = await _get_xpath_text_js(tab, xpath)
+                    if confirm_text and not _is_loading_placeholder(confirm_text):
+                        return True
         except Exception:
             pass
         await async_sleep(0.5)
@@ -64,6 +71,60 @@ async def fetch_page_content(tab) -> str:
     except AttributeError:
         script = "return document.documentElement.outerHTML;"
         return await tab.evaluate(script)
+
+
+async def _get_xpath_text_js(tab, xpath: str) -> str:
+    """Extract text from XPath using JavaScript evaluation."""
+    if not xpath:
+        return ""
+    
+    script = f"""
+    (function() {{
+        const element = document.evaluate(
+            '{xpath}',
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+        ).singleNodeValue;
+        
+        if (!element) return null;
+        
+        return {{
+            textContent: element.textContent || '',
+            innerText: element.innerText || '',
+            innerHTML: element.innerHTML || ''
+        }};
+    }})();
+    """
+    
+    try:
+        text_data = await tab.evaluate(script)
+        
+        if text_data:
+            # Handle different return formats
+            if isinstance(text_data, dict):
+                result = (text_data.get('textContent') or 
+                         text_data.get('innerText') or 
+                         text_data.get('innerHTML', '')).strip()
+            elif isinstance(text_data, list):
+                # Parse the list format returned by some browsers
+                for item in text_data:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        key, value = item[0], item[1]
+                        if isinstance(value, dict) and 'value' in value:
+                            result = value['value'].strip()
+                            if result:
+                                return result
+                return ""
+            else:
+                result = str(text_data).strip()
+            
+            return result
+    except Exception:
+        return ""
+    
+    return ""
 
 
 async def _get_xpath_text(tab, xpath: str) -> str:
@@ -91,6 +152,51 @@ async def _get_xpath_text(tab, xpath: str) -> str:
         except Exception:
             continue
     return ""
+
+
+def _is_loading_placeholder(text: str) -> bool:
+    """Return True when the extracted text still shows a loading placeholder."""
+    if not text:
+        return False
+
+    normalized = " ".join(text.lower().split())
+    if not normalized:
+        return False
+
+    # Exact placeholder matches (return True immediately)
+    exact_placeholders = [
+        "loading-payment-container",
+        "loading payment container",
+        "loading...",
+        "loading …",
+        "spinner",
+    ]
+    
+    for placeholder in exact_placeholders:
+        if placeholder in normalized:
+            return True
+    
+    # Generic loading words - only reject if there's NO meaningful content
+    generic_loading = ["loading", "processing", "please wait"]
+    
+    if any(word in normalized for word in generic_loading):
+        # Check if there's actual meaningful content
+        meaningful_keywords = [
+            "bank",
+            "failed",
+            "error",
+            "rejected",
+            "declined",
+            "invalid",
+            "success",
+            "linked",
+            "card",
+        ]
+        # If no meaningful keywords, it's just a loading message
+        if not any(keyword in normalized for keyword in meaningful_keywords):
+            return True
+    
+    return False
 
 
 async def _collect_candidate_messages(tab) -> List[str]:
@@ -157,7 +263,16 @@ async def _collect_candidate_messages(tab) -> List[str]:
     if not isinstance(result, list):
         return []
 
-    return [str(item).strip() for item in result if isinstance(item, str) and item.strip()]
+    cleaned: List[str] = []
+    for item in result:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if not text or _is_loading_placeholder(text):
+            continue
+        cleaned.append(text)
+
+    return cleaned
 
 
 def _choose_best_message(messages: List[str]) -> str:
@@ -257,54 +372,14 @@ async def extract_result_message(tab, config: Dict[str, Any]) -> str:
         
         log_info(f"Attempting to extract result message using xpath: {xpath}")
         
-        # First try to find the specific txtNewline div
-        try:
-            txtNewline_elements = await tab.select_all("div.txtNewline")
-            if txtNewline_elements:
-                log_info(f"Found {len(txtNewline_elements)} div.txtNewline elements")
-                text = await txtNewline_elements[0].get_property("textContent")
-                if text:
-                    result = text.strip()
-                    log_info(f"Extracted from txtNewline: '{result}'")
-                    return _first_sentence(result)
-        except Exception as e:
-            log_info(f"txtNewline extraction failed: {e}")
+        # Use JavaScript evaluation to extract text
+        text = await _get_xpath_text_js(tab, xpath)
         
-        # Fallback to the main result element
-        elements = await tab.xpath(xpath, timeout=3)
-        if not elements:
-            log_info("Result page element not found")
-        else:
-            log_info(f"Found {len(elements)} elements, extracting text...")
+        if text and not _is_loading_placeholder(text):
+            log_info(f"Extracted result message: '{text}'")
+            return _first_sentence(text)
         
-            # Try multiple methods to get text
-            text = None
-
-            # Method 1: textContent property
-            try:
-                text = await elements[0].get_property("textContent")
-                log_info(f"Got text via textContent: {text}")
-            except Exception as e1:
-                log_info(f"textContent failed: {e1}")
-
-                # Method 2: innerText property
-                try:
-                    text = await elements[0].get_property("innerText")
-                    log_info(f"Got text via innerText: {text}")
-                except Exception as e2:
-                    log_info(f"innerText failed: {e2}")
-
-                    # Method 3: Direct text attribute
-                    try:
-                        text = await elements[0].text
-                        log_info(f"Got text via .text: {text}")
-                    except Exception as e3:
-                        log_info(f".text failed: {e3}")
-
-            result = (text or "").strip()
-            if result:
-                log_info(f"Final extracted message from xpath: '{result}'")
-                return _first_sentence(result)
+        log_info(f"XPath extraction returned empty or placeholder, trying fallback...")
 
         # If we reach here, fallback to a broader DOM scan
         messages = await _collect_candidate_messages(tab)

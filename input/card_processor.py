@@ -13,6 +13,24 @@ from utils.helpers import log_error, log_info
 CardData = Dict[str, Any]
 
 
+def _passes_luhn(number: str) -> bool:
+    """Return True when the card number satisfies the Luhn checksum."""
+    if not number or not number.isdigit():
+        return False
+
+    total = 0
+    double = False
+    for digit_char in reversed(number):
+        digit = ord(digit_char) - 48
+        if double:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+        double = not double
+    return total % 10 == 0
+
+
 def _parse_card_line(line: str) -> Tuple[bool, CardData]:
     """Parse a single card line into its components."""
     parts = [segment.strip() for segment in line.split("|")]
@@ -61,6 +79,9 @@ def validate_card(card: CardData) -> bool:
     number = card.get("number", "")
     if not number.isdigit() or len(number) != 16:
         card["error"] = "Card number must be 16 digits"
+        return False
+    if not _passes_luhn(number):
+        card["error"] = "Card number failed Luhn check"
         return False
 
     mm = card.get("mm", "")
