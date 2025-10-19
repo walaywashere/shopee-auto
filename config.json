@@ -6,7 +6,8 @@
   "timeouts": {
     "page_load": 10,
     "element_wait": 8,
-    "api_response": 15
+    "api_response": 15,
+    "error_popup_check": 2
   },
   "delays": {
     "between_cards": 0.5,
@@ -18,7 +19,8 @@
     "cvv": "//*[@id='root']/div[2]/div[1]/div[4]/div[3]/div[2]/div/div[1]/div/div[1]/input",
     "name": "//*[@id='root']/div[2]/div[1]/div[4]/div[4]/div[1]/div/div/input",
     "submit": "//*[@id='root']/div[2]/div[2]/div/button[2]",
-    "result_page_element": "//*[@id='root']/div[2]/div[3]/div"
+    "result_page_element": "//*[@id='root']/div[2]/div[3]/div",
+    "error_popup": "//*[@id='undefined-popup-content']/div"
   },
   "urls": {
     "payment_form": "https://pay.shopee.ph/payment-v2/add-card?add_card_scene=0&block_cc=False&client_id=40024&is_mepage=1&page_type=2&payment_channel_id=4004000&post_to_tpp=True&to_local_spm=0&callback_url=https%3A%2F%2Fshopee.ph%2Fuser%2Faccount%2Fpayment",

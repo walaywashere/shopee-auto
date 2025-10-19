@@ -417,10 +417,47 @@ def check_add_card_failed(page_content: str) -> bool:
     return "add card failed" in page_content.lower()
 
 
+async def check_for_error_popup(tab, config: Dict[str, Any]) -> Tuple[bool, str]:
+    """Check if an error popup appeared after form submission."""
+    xpaths = config.get("xpaths", {})
+    error_popup_xpath = xpaths.get("error_popup", "")
+    
+    if not error_popup_xpath:
+        return False, ""
+    
+    timeouts = config.get("timeouts", {})
+    check_timeout = float(timeouts.get("error_popup_check", 2))
+    
+    log_info(f"Checking for error popup with xpath: {error_popup_xpath}")
+    
+    # Wait a moment for popup to appear
+    await async_sleep(check_timeout)
+    
+    try:
+        # Try to extract text from the error popup
+        error_text = await _get_xpath_text_js(tab, error_popup_xpath)
+        
+        if error_text and error_text.strip():
+            log_info(f"Error popup detected: {error_text}")
+            return True, error_text.strip()
+        
+        log_info("No error popup detected")
+        return False, ""
+    except Exception as exc:
+        log_info(f"Error popup check failed (popup not present): {exc}")
+        return False, ""
+
+
 async def determine_status(tab, api_payload: Dict[str, Any], config: Dict[str, Any]) -> Tuple[str, str]:
     """Determine final status label and reason."""
     # Log received payload for debugging
     log_info(f"Analyzing API payload: url={api_payload.get('url')}, has_body={bool(api_payload.get('body'))}")
+    
+    # First check for error popup that appears immediately after submit
+    has_popup, popup_message = await check_for_error_popup(tab, config)
+    if has_popup:
+        log_info(f"Invalid card detected via error popup: {popup_message}")
+        return "[FAILED]", popup_message or "Invalid card number"
     
     # If body is available, check for 3DS challenge flag
     if api_payload.get("body") and is_three_ds(api_payload):
