@@ -115,43 +115,120 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
     except Exception:
         pass
 
-    await element.apply("(el) => el.focus()")
+    try:
+        await tab.send(cdp.dom.focus(backend_node_id=element.backend_node_id))
+    except Exception:
+        await element.apply("(el) => el.focus()")
+
     await async_sleep(0.1)
 
-    await element.apply(
-        """
-        function(el) {
-            const proto = Object.getPrototypeOf(el);
-            const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
-            if (descriptor && typeof descriptor.set === 'function') {
-                descriptor.set.call(el, '');
-            } else {
-                el.value = '';
+    # Clear current value via Ctrl+A, Delete combination
+    try:
+        await tab.send(
+            cdp.input_.dispatch_key_event(
+                "rawKeyDown",
+                modifiers=2,
+                windows_virtual_key_code=65,
+                code="KeyA",
+                key="a",
+            )
+        )
+        await tab.send(
+            cdp.input_.dispatch_key_event(
+                "keyUp",
+                modifiers=2,
+                windows_virtual_key_code=65,
+                code="KeyA",
+                key="a",
+            )
+        )
+        await tab.send(
+            cdp.input_.dispatch_key_event(
+                "rawKeyDown",
+                windows_virtual_key_code=46,
+                code="Delete",
+                key="Delete",
+            )
+        )
+        await tab.send(
+            cdp.input_.dispatch_key_event(
+                "keyUp",
+                windows_virtual_key_code=46,
+                code="Delete",
+                key="Delete",
+            )
+        )
+    except Exception:
+        # Fall back to native setter if key events fail
+        await element.apply(
+            """
+            function(el) {
+                const proto = Object.getPrototypeOf(el);
+                const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
+                if (descriptor && typeof descriptor.set === 'function') {
+                    descriptor.set.call(el, '');
+                } else {
+                    el.value = '';
+                }
+                if (typeof el.dispatchEvent === 'function') {
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             }
-            if (typeof el.dispatchEvent === 'function') {
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-        """
-    )
+            """
+        )
 
     await async_sleep(0.05)
 
-    await tab.send(cdp.input_.insert_text(value))
+    def _key_event_payloads(char: str):
+        if char.isdigit():
+            vk = ord(char)
+            code = f"Digit{char}"
+            key = char
+        elif char == "/":
+            vk = 191
+            code = "Slash"
+            key = "/"
+        elif char == " ":
+            vk = 32
+            code = "Space"
+            key = " "
+        else:
+            vk = 0
+            code = ""
+            key = char
 
-    await async_sleep(0.05)
+        return [
+            {
+                "type": "rawKeyDown",
+                "windows_virtual_key_code": vk,
+                "code": code,
+                "key": key,
+                "text": "",
+            },
+            {
+                "type": "char",
+                "windows_virtual_key_code": 0,
+                "code": code,
+                "key": key,
+                "text": char,
+            },
+            {
+                "type": "keyUp",
+                "windows_virtual_key_code": vk,
+                "code": code,
+                "key": key,
+                "text": "",
+            },
+        ]
 
-    await element.apply(
-        """
-        function(el) {
-            if (typeof el.dispatchEvent === 'function') {
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-        """
-    )
+    for char in value:
+        events = _key_event_payloads(char)
+        for payload in events:
+            payload_args = dict(payload)
+            payload_type = payload_args.pop("type")
+            await tab.send(cdp.input_.dispatch_key_event(payload_type, **payload_args))
+        await async_sleep(0.01)
 
     state = await element.apply(
         """
