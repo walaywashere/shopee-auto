@@ -47,7 +47,7 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
     for attempt in range(1, attempts + 1):
         try:
             await tab.get(url)
-            await async_sleep(1.5)  # Wait for form to fully load and render
+            await async_sleep(2.5)  # Wait for form to fully load, render, and JS to initialize
             log_info("Payment form loaded")
             return
         except Exception as exc:
@@ -62,42 +62,75 @@ async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: s
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
+            # Try XPath first
             elements = await tab.xpath(xpath, timeout=timeout)
+            
+            # If XPath fails, try CSS selectors as fallback based on field name
+            if not elements and field_name:
+                log_info(f"XPath failed for {field_name}, trying CSS selector fallback...")
+                css_selectors = {
+                    "card_number": "input[placeholder*='Card Number'], input[name*='card'], input[id*='card']",
+                    "expiry": "input[placeholder*='Expiry'], input[placeholder*='MM/YY'], input[name*='expiry']",
+                    "cvv": "input[placeholder*='CVV'], input[name*='cvv'], input[id*='cvv']",
+                    "name": "input[placeholder*='Name'], input[name*='name'], input[id*='name']"
+                }
+                selector = css_selectors.get(field_name, "")
+                if selector:
+                    try:
+                        elements = await tab.select_all(selector)
+                    except Exception:
+                        pass
+            
             if not elements:
                 if attempt < max_retries:
                     log_info(f"Element {field_name or xpath} not found (attempt {attempt}/{max_retries}), retrying...")
                     await async_sleep(1)
                     continue
-                raise RuntimeError(f"Element not found for xpath {xpath}")
+                raise RuntimeError(f"Element not found for {field_name or xpath}")
             
             element = elements[0]
-            await element.scroll_into_view()
-            await async_sleep(0.3)  # Wait for scroll to complete
-            await element.focus()
-            await async_sleep(0.2)  # Wait for focus
             
+            # Make sure element is visible and interactable
+            await element.scroll_into_view()
+            await async_sleep(0.5)  # Wait for scroll animation
+            
+            # Click to ensure focus
+            try:
+                await element.click()
+                await async_sleep(0.2)
+            except Exception:
+                await element.focus()
+                await async_sleep(0.2)
+            
+            # Clear existing value
             try:
                 await element.clear_input()
-                await async_sleep(0.1)
+                await async_sleep(0.2)
             except Exception:
-                pass
+                # Alternative clear method
+                try:
+                    await element.send_keys("\b" * 50)  # Backspace multiple times
+                    await async_sleep(0.2)
+                except Exception:
+                    pass
             
+            # Send the value
             await element.send_keys(value)
-            await async_sleep(0.2)  # Wait for input to register
+            await async_sleep(0.3)  # Wait for input to register
             
             # Verify the value was actually entered
             try:
                 entered_value = await element.get_property("value")
                 if entered_value != value:
                     if attempt < max_retries:
-                        log_info(f"Value mismatch for {field_name} (attempt {attempt}/{max_retries}), retrying...")
+                        log_info(f"Value mismatch for {field_name} (expected '{value}', got '{entered_value}'), retrying...")
                         await async_sleep(0.5)
                         continue
                     log_error(f"Failed to verify input for {field_name}: expected '{value}', got '{entered_value}'")
             except Exception:
                 pass  # Verification failed, but input might still be OK
             
-            log_info(f"Successfully filled {field_name or 'field'}")
+            log_info(f"Successfully filled {field_name or 'field'} with value: {value if field_name != 'cvv' else '***'}")
             return  # Success
             
         except Exception as exc:
