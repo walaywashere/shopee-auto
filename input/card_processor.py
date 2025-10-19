@@ -38,6 +38,11 @@ def _parse_card_line(line: str) -> Tuple[bool, CardData]:
         return False, {"error": "Invalid format", "raw": line}
 
     number, mm, yy, cvv = parts
+    
+    # Convert 4-digit year to 2-digit format (e.g., 2026 -> 26)
+    if yy.isdigit() and len(yy) == 4:
+        yy = yy[-2:]  # Take last 2 digits
+    
     card: CardData = {
         "number": number,
         "mm": mm,
@@ -91,12 +96,24 @@ def validate_card(card: CardData) -> bool:
 
     yy = card.get("yy", "")
     if len(yy) != 2 or not yy.isdigit():
-        card["error"] = "Invalid year"
+        card["error"] = "Invalid year format (must be 2 digits)"
         return False
 
-    current_year = datetime.utcnow().year % 100
-    if int(yy) < current_year:
-        card["error"] = "Card year already expired"
+    # Get current date for expiration check
+    now = datetime.utcnow()
+    current_year = now.year % 100  # Get 2-digit year (e.g., 2025 -> 25)
+    current_month = now.month
+    
+    card_year = int(yy)
+    card_month = int(mm)
+    
+    # Check if card is expired
+    # Card expires at the END of the expiration month
+    if card_year < current_year:
+        card["error"] = "Card expired (year)"
+        return False
+    elif card_year == current_year and card_month < current_month:
+        card["error"] = f"Card expired (expires {mm}/{yy}, current date {current_month:02d}/{current_year:02d})"
         return False
 
     cvv = card.get("cvv", "")
