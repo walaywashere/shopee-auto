@@ -1,0 +1,24 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Unit test caches
+.pytest_cache/
+htmlcov/
+.coverage*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project-specific
+cc*.txt
+ccs*.txt
