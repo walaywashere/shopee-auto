@@ -126,18 +126,59 @@ def validate_card(card: CardData) -> bool:
 
 
 def build_card_queue(filepath: str) -> List[CardData]:
-    """Build a validated card queue from file input."""
+    """Build a validated card queue from file input and silently remove invalid cards."""
     raw_cards = read_cards_from_file(filepath)
     queue: List[CardData] = []
+    invalid_cards: List[CardData] = []
 
     for card in raw_cards:
         if validate_card(card):
             queue.append(card)
         else:
-            log_error(f"Skipping invalid card on line {card.get('line_number')}: {card.get('error')}")
+            # Silently collect invalid cards for removal
+            invalid_cards.append(card)
+
+    # Remove invalid cards from the file
+    if invalid_cards:
+        _remove_invalid_cards_from_file(filepath, invalid_cards)
 
     log_info(f"Validated {len(queue)} cards out of {len(raw_cards)}")
     return queue
+
+
+def _remove_invalid_cards_from_file(filepath: str, invalid_cards: List[CardData]) -> None:
+    """Remove multiple invalid card entries from the source file."""
+    if not invalid_cards:
+        return
+
+    source_path = Path(filepath)
+    if not source_path.exists():
+        return
+
+    # Create a set of raw card lines to remove (normalized)
+    lines_to_remove = {card.get("raw", "").strip() for card in invalid_cards if card.get("raw")}
+    if not lines_to_remove:
+        return
+
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(source_path.parent))
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="") as tmp_file, source_path.open(
+            "r", encoding="utf-8", newline=""
+        ) as src_file:
+            for line in src_file:
+                # Keep the line if it's not in the removal set
+                if line.strip() not in lines_to_remove:
+                    tmp_file.write(line)
+
+        # Replace original file with cleaned version
+        os.replace(tmp_path, source_path)
+    except Exception:
+        # Ensure temp file is removed on any unexpected error
+        try:
+            os.remove(tmp_path)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def format_card_string(card: CardData) -> str:
