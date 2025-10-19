@@ -12,11 +12,9 @@ from typing import Any, Dict
 from nodriver import Browser
 
 from core.browser_manager import (
-    NetworkInterceptor,
     close_browser,
     init_browser,
     load_session_cookies,
-    setup_network_interception,
     verify_session,
 )
 from core.checker import process_all_batches
@@ -89,17 +87,15 @@ async def _async_main(args: argparse.Namespace) -> int:
         if not await verify_session(browser, config):
             log_error("Shopee session verification failed")
             return 7
-        primary_tab = await browser.get("about:blank")
-        interceptor: NetworkInterceptor = await setup_network_interception(primary_tab, config)
-
         results_path.parent.mkdir(parents=True, exist_ok=True)
         if results_path.exists():
             results_path.unlink()
+        results_path.touch()
 
         summary = await process_all_batches(
             browser,
             card_queue,
-            interceptor,
+            None,
             config,
             str(results_path),
         )

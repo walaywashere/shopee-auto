@@ -141,10 +141,14 @@ async def verify_session(browser: Browser, config: Dict[str, Any]) -> bool:
             pass
 
 
-async def setup_network_interception(tab, config: Dict[str, Any]) -> NetworkInterceptor:
-    """Enable CDP network interception and capture target responses."""
+async def setup_network_interception(
+    tab,
+    config: Dict[str, Any],
+    interceptor: Optional[NetworkInterceptor] = None,
+) -> NetworkInterceptor:
+    """Enable CDP network interception for the provided tab."""
     target_endpoint = config.get("urls", {}).get("api_endpoint", "").lower()
-    interceptor = NetworkInterceptor(target_endpoint)
+    interceptor = interceptor or NetworkInterceptor(target_endpoint)
 
     try:
         await tab.send(cdp.network.enable())
@@ -215,7 +219,7 @@ async def close_browser(browser: Optional[Browser]) -> None:
     if not browser:
         return
     try:
-        await browser.quit()
+        browser.stop()
         log_info("Browser closed")
     except Exception as exc:
         log_error(f"Error while closing browser: {exc}")

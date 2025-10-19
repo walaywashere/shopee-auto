@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from nodriver import Browser
 
-from core.browser_manager import NetworkInterceptor
+from core.browser_manager import NetworkInterceptor, setup_network_interception
 from core import response_analyzer
 from core import tab_manager
 from input.card_processor import format_card_string
@@ -26,8 +26,14 @@ def _chunk_cards(cards: List[CardDict], batch_size: int) -> Iterable[List[CardDi
         yield cards[index : index + batch_size]
 
 
-async def _prepare_tab(browser: Browser, card: CardDict, config: Dict[str, Any]) -> Any:
+async def _prepare_tab(
+    browser: Browser,
+    card: CardDict,
+    config: Dict[str, Any],
+    interceptor: NetworkInterceptor,
+) -> Any:
     tab = await tab_manager.create_tab(browser)
+    await setup_network_interception(tab, config, interceptor)
     form_url = config.get("urls", {}).get("payment_form", "")
     timeouts = config.get("timeouts", {})
     await tab_manager.navigate_to_form(tab, form_url, timeouts.get("page_load", 10))
@@ -116,7 +122,7 @@ async def _process_single_card(
                 await tab_manager.close_tab(current_tab)
             if attempt > max_retries:
                 break
-            current_tab = await _prepare_tab(browser, card, config)
+            current_tab = await _prepare_tab(browser, card, config, interceptor)
             await async_sleep(retry_delay)
     card["status"] = status
     card["error"] = reason
@@ -137,7 +143,7 @@ async def process_batch(
     results_path: str,
 ) -> List[CardDict]:
     results: List[CardDict] = []
-    fill_tasks = [_prepare_tab(browser, card, config) for card in batch_cards]
+    fill_tasks = [_prepare_tab(browser, card, config, interceptor) for card in batch_cards]
     prepared_tabs = await asyncio.gather(*fill_tasks, return_exceptions=True)
 
     first_error: Optional[BaseException] = None
@@ -175,7 +181,7 @@ async def process_batch(
 async def process_all_batches(
     browser: Browser,
     card_queue: List[CardDict],
-    interceptor: NetworkInterceptor,
+    interceptor: Optional[NetworkInterceptor],
     config: Dict[str, Any],
     results_path: str,
 ) -> Dict[str, Any]:
@@ -188,6 +194,10 @@ async def process_all_batches(
         "three_ds": 0,
         "cards_processed": [],
     }
+
+    interceptor = interceptor or NetworkInterceptor(
+        config.get("urls", {}).get("api_endpoint", "")
+    )
 
     current_index = 1
     for batch in _chunk_cards(card_queue, batch_size):
