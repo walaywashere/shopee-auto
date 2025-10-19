@@ -17,7 +17,7 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.browser_manager import launch_browsers, close_browsers
+from core.browser_manager import init_browser, close_browser, load_session_cookies, verify_session
 from core.checker import process_all_batches
 from input.card_processor import build_card_queue, validate_card
 from utils.helpers import log_info, log_error
@@ -393,7 +393,27 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             
             # Launch browsers
             self.log_message(f"Launching {self.workers_count.get()} browser instances...", "INFO")
-            browsers = await launch_browsers(self.workers_count.get(), self.config)
+            browsers = []
+            for i in range(self.workers_count.get()):
+                self.log_message(f"Starting browser {i + 1}/{self.workers_count.get()}", "INFO")
+                browser = await init_browser(self.config)
+                cookies_loaded = await load_session_cookies(browser, self.cookies_file_path.get(), self.config)
+                if not cookies_loaded:
+                    self.log_message(f"Unable to load cookies for browser {i + 1}; aborting", "ERROR")
+                    # Close all browsers created so far
+                    for b in browsers:
+                        await close_browser(b, keep_open=False)
+                    return
+                if not await verify_session(browser, self.config):
+                    self.log_message(f"Session verification failed for browser {i + 1}; aborting", "ERROR")
+                    # Close all browsers created so far
+                    for b in browsers:
+                        await close_browser(b, keep_open=False)
+                    await close_browser(browser, keep_open=False)
+                    return
+                browsers.append(browser)
+            
+            self.log_message(f"Successfully initialized {len(browsers)} browser instances", "INFO")
             
             # Process cards
             self.log_message("Starting parallel processing...", "INFO")
@@ -421,7 +441,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.log_message("=" * 50, "INFO")
             
             # Close browsers
-            await close_browsers(browsers)
+            for browser in browsers:
+                await close_browser(browser, keep_open=False)
             
         except Exception as e:
             self.log_message(f"Processing error: {e}", "ERROR")
