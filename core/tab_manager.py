@@ -57,50 +57,43 @@ async def navigate_to_form(tab, url: str, timeout: float) -> None:
 
 
 async def _fill_input(tab, xpath: str, value: str, timeout: float, field_name: str = "") -> None:
-    """Fill an input field using CDP key events (works without window focus)."""
+    """Fill an input field instantly using JavaScript (maximum speed, no delays)."""
     elements = await tab.xpath(xpath, timeout=timeout)
     if not elements:
         raise RuntimeError(f"Element not found for {field_name or xpath}")
     
     element = elements[0]
-    await element.scroll_into_view()
-    await async_sleep(0.2)
     
-    # Click to activate the field
+    # Set value directly via JavaScript - instant, no typing animation
     try:
+        await element.apply("""
+            function(el, value) {
+                el.value = value;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        """, value)
+        log_info(f"Filled {field_name or 'field'} instantly via JS")
+    except Exception as e:
+        # Fallback: click and use CDP events if JS fails
+        log_info(f"JS fill failed for {field_name}, using CDP fallback: {e}")
         await element.click()
-        await async_sleep(0.2)
-    except Exception:
-        pass
-    
-    # Clear existing value using Ctrl+A, Delete
-    try:
-        # Select all
-        await tab.send(cdp.input_.dispatch_key_event("keyDown", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))  # Ctrl
-        await tab.send(cdp.input_.dispatch_key_event("keyUp", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))
-        await async_sleep(0.1)
         
-        # Delete
+        # Clear with Ctrl+A + Delete
+        await tab.send(cdp.input_.dispatch_key_event("keyDown", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))
+        await tab.send(cdp.input_.dispatch_key_event("keyUp", key="a", code="KeyA", windows_virtual_key_code=65, modifiers=2))
         await tab.send(cdp.input_.dispatch_key_event("keyDown", key="Delete", code="Delete", windows_virtual_key_code=46))
         await tab.send(cdp.input_.dispatch_key_event("keyUp", key="Delete", code="Delete", windows_virtual_key_code=46))
-        await async_sleep(0.1)
-    except Exception as e:
-        log_info(f"Could not clear {field_name}: {e}")
-    
-    # Send each character using CDP dispatch_key_event (works without focus)
-    for char in value:
-        try:
+        
+        # Type value
+        for char in value:
             await tab.send(cdp.input_.dispatch_key_event("char", text=char))
-        except Exception as e:
-            log_error(f"Failed to send character '{char}' to {field_name}: {e}")
-            raise
-    
-    await async_sleep(0.2)
-    log_info(f"Filled {field_name or 'field'} using CDP events")
+        
+        log_info(f"Filled {field_name or 'field'} using CDP fallback")
 
 
 async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
-    """Fill the payment form inputs for the provided card."""
+    """Fill the payment form inputs for the provided card - optimized for speed."""
     xpaths = config.get("xpaths", {})
     timeouts = config.get("timeouts", {})
     element_timeout = timeouts.get("element_wait", 8)
@@ -114,43 +107,24 @@ async def fill_card_form(tab, card: CardDict, config: Dict[str, Any]) -> None:
     
     try:
         # Wait for all form elements to be present
-        log_info(f"Waiting for all form elements to load for card ending {card_last4}")
+        log_info(f"Waiting for form elements for card ending {card_last4}")
         await tab.xpath(xpaths.get("card_number", ""), timeout=element_timeout)
         await tab.xpath(xpaths.get("mmyy", ""), timeout=element_timeout)
         await tab.xpath(xpaths.get("cvv", ""), timeout=element_timeout)
         if name:
             await tab.xpath(xpaths.get("name", ""), timeout=element_timeout)
         
-        # Wait 1 second after all elements are loaded
-        log_info(f"All elements loaded, waiting 1s before filling")
-        await async_sleep(1)
+        # Fill form fields instantly (no delays between fields)
+        log_info(f"Filling card form for card ending {card_last4}")
         
-        # Fill the form TWICE for safety
-        for fill_attempt in [1, 2]:
-            log_info(f"Fill attempt {fill_attempt}/2 for card ending {card_last4}")
-            
-            log_info(f"Filling card number for card ending {card_last4}")
-            await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
-            await async_sleep(0.2)  # Small delay between fields
-            
-            log_info(f"Filling expiry date for card ending {card_last4}")
-            await _fill_input(tab, xpaths.get("mmyy", ""), expiry, element_timeout, "expiry")
-            await async_sleep(0.2)
-            
-            log_info(f"Filling CVV for card ending {card_last4}")
-            await _fill_input(tab, xpaths.get("cvv", ""), card.get("cvv", ""), element_timeout, "cvv")
-            await async_sleep(0.2)
-            
-            if name:
-                log_info(f"Filling name for card ending {card_last4}")
-                await _fill_input(tab, xpaths.get("name", ""), name, element_timeout, "name")
-                await async_sleep(0.2)
-            
-            if fill_attempt == 1:
-                log_info(f"First fill complete, pausing before second fill")
-                await async_sleep(1)  # Longer pause between fill attempts
+        await _fill_input(tab, xpaths.get("card_number", ""), card.get("number", ""), element_timeout, "card_number")
+        await _fill_input(tab, xpaths.get("mmyy", ""), expiry, element_timeout, "expiry")
+        await _fill_input(tab, xpaths.get("cvv", ""), card.get("cvv", ""), element_timeout, "cvv")
         
-        log_info(f"All fields filled successfully (2x) for card ending {card_last4}")
+        if name:
+            await _fill_input(tab, xpaths.get("name", ""), name, element_timeout, "name")
+        
+        log_info(f"All fields filled for card ending {card_last4}")
     except Exception as exc:
         log_error(f"Failed to fill form for card ending {card_last4}: {exc}")
         raise
