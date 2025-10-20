@@ -199,6 +199,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             font=ctk.CTkFont(size=13)
         )
         self.retry_checkbox.pack(anchor="w", pady=5)
+        # Explicitly set checkbox state from config
+        if self.retry_enabled.get():
+            self.retry_checkbox.select()
+        else:
+            self.retry_checkbox.deselect()
         
         # Workers
         workers_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
