@@ -35,8 +35,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         
         # Window configuration
         self.title("Shopee Card Checker Pro")
-        self.geometry("900x700")
-        self.minsize(800, 600)
+        self.geometry("900x750")
+        self.minsize(800, 700)
         
         # Load config
         self.config = self.load_config()
@@ -291,18 +291,19 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         """Create log display section"""
         log_frame = ctk.CTkFrame(parent)
         log_frame.grid(row=4, column=0, sticky="nsew", padx=20, pady=(10, 20))
-        log_frame.grid_rowconfigure(1, weight=1)
+        log_frame.grid_rowconfigure(1, weight=1, minsize=200)  # Minimum height for log section
         log_frame.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(log_frame, text="📋 Activity Log", font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, sticky="w", padx=15, pady=(15, 5)
         )
         
-        # Log textbox with scrollbar
+        # Log textbox with scrollbar - explicitly set height
         self.log_textbox = ctk.CTkTextbox(
             log_frame, 
             font=ctk.CTkFont(family="Consolas", size=11),
             wrap="word",
+            height=200,  # Explicit minimum height
             scrollbar_button_color=("gray70", "gray30"),
             scrollbar_button_hover_color=("gray60", "gray40")
         )
