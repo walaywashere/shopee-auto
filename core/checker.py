@@ -144,8 +144,15 @@ async def _process_single_card(
     retry_delay = float(delays.get("retry_delay", 1))
     timeouts = config.get("timeouts", {})
     api_timeout = float(timeouts.get("api_response", 5))
+    
+    # Get retry configuration
+    retry_config = config.get("retry", {})
+    retry_enabled = retry_config.get("enabled", True)
+    max_specific_retries = retry_config.get("max_retries", 3)
+    retry_on_errors = retry_config.get("retry_on_errors", [])
 
     attempt = 0
+    specific_error_retries = 0
     status = "[FAILED]"
     reason = "Max retries exceeded"
     current_tab = prepared_tab
@@ -163,16 +170,44 @@ async def _process_single_card(
             # Check for error popup immediately after submit (before waiting for API)
             has_popup, popup_message = await response_analyzer.check_for_error_popup(current_tab, config)
             if has_popup:
-                # Skip API wait, card is invalid
-                status = "[FAILED]"
-                reason = popup_message or "Invalid card detected via popup"
-                log_info(f"Error popup detected, skipping API wait: {reason}")
+                # Check if this error should trigger a retry
+                should_retry_error = False
+                if retry_enabled and retry_on_errors and specific_error_retries < max_specific_retries:
+                    for retry_pattern in retry_on_errors:
+                        if retry_pattern in popup_message:
+                            should_retry_error = True
+                            specific_error_retries += 1
+                            log_info(f"Retryable error detected: '{popup_message}' (retry {specific_error_retries}/{max_specific_retries})")
+                            break
+                
+                if should_retry_error:
+                    # Retry this card with the same attempt count
+                    await async_sleep(retry_delay)
+                    # Re-prepare the tab for retry
+                    if current_tab and current_mode != "reuse":
+                        await tab_manager.close_tab(current_tab)
+                        current_tab = None
+                    reusable_info = (current_tab, "reuse") if current_tab else None
+                    current_tab, current_mode = await _prepare_tab(
+                        browser,
+                        card,
+                        config,
+                        interceptor,
+                        reusable_tab_info=reusable_info,
+                    )
+                    continue  # Retry without incrementing attempt
+                else:
+                    # Skip API wait, card is invalid
+                    status = "[FAILED]"
+                    reason = popup_message or "Invalid card detected via popup"
+                    log_info(f"Error popup detected, skipping API wait: {reason}")
             else:
                 # No popup, wait for API response
                 payload = await _await_target_response(interceptor, api_timeout)
                 payload = payload or {}
                 # Pass skip_popup_check=True since we already checked above
                 status, reason = await response_analyzer.determine_status(current_tab, payload, config, skip_popup_check=True)
+            
             card_str = format_card_string(card)
             log_card_result(card_index, total_cards, status, card_str, reason)
             if status == "[SUCCESS]":

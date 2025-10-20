@@ -50,6 +50,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.headless_mode = tk.BooleanVar(value=self.config.get("browser", {}).get("headless", True))
         self.workers_count = tk.IntVar(value=self.config.get("workers", 5))
         
+        # Retry configuration
+        retry_config = self.config.get("retry", {})
+        self.retry_enabled = tk.BooleanVar(value=retry_config.get("enabled", True))
+        self.retry_max_retries = tk.IntVar(value=retry_config.get("max_retries", 3))
+        
         # Processing state
         self.is_processing = False
         self.processing_thread = None
@@ -186,6 +191,15 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         )
         self.headless_checkbox.pack(anchor="w", pady=5)
         
+        # Retry on specific errors
+        self.retry_checkbox = ctk.CTkCheckBox(
+            left_frame,
+            text="🔄 Enable Auto-Retry (for [3] errors)",
+            variable=self.retry_enabled,
+            font=ctk.CTkFont(size=13)
+        )
+        self.retry_checkbox.pack(anchor="w", pady=5)
+        
         # Workers
         workers_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
         workers_frame.pack(anchor="w", pady=5, fill="x")
@@ -202,6 +216,23 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.workers_label = ctk.CTkLabel(workers_frame, text="5", font=ctk.CTkFont(size=13, weight="bold"))
         self.workers_label.pack(side="left", padx=5)
         self.workers_slider.configure(command=self.update_workers_label)
+        
+        # Retry max attempts
+        retry_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+        retry_frame.pack(anchor="w", pady=5, fill="x")
+        ctk.CTkLabel(retry_frame, text="🔁 Max Retries:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(0, 10))
+        self.retry_slider = ctk.CTkSlider(
+            retry_frame,
+            from_=1,
+            to=5,
+            number_of_steps=4,
+            variable=self.retry_max_retries,
+            width=150
+        )
+        self.retry_slider.pack(side="left", padx=5)
+        self.retry_label = ctk.CTkLabel(retry_frame, text="3", font=ctk.CTkFont(size=13, weight="bold"))
+        self.retry_label.pack(side="left", padx=5)
+        self.retry_slider.configure(command=self.update_retry_label)
         
         # Right column - Output files
         right_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
@@ -325,6 +356,10 @@ class ShopeeCardCheckerGUI(ctk.CTk):
     def update_workers_label(self, value):
         """Update workers count label"""
         self.workers_label.configure(text=str(int(value)))
+    
+    def update_retry_label(self, value):
+        """Update retry count label"""
+        self.retry_label.configure(text=str(int(value)))
     
     def browse_card_file(self):
         """Browse for card file"""
@@ -576,6 +611,12 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         # Update config with GUI values
         self.config["browser"]["headless"] = self.headless_mode.get()
         self.config["workers"] = self.workers_count.get()
+        
+        # Update retry configuration
+        if "retry" not in self.config:
+            self.config["retry"] = {}
+        self.config["retry"]["enabled"] = self.retry_enabled.get()
+        self.config["retry"]["max_retries"] = self.retry_max_retries.get()
         
         # Start monitoring thread
         self.monitor_thread = threading.Thread(target=self.monitor_progress, daemon=True)

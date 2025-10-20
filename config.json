@@ -13,6 +13,13 @@
     "between_cards": 0.5,
     "retry_delay": 1
   },
+  "retry": {
+    "enabled": true,
+    "max_retries": 3,
+    "retry_on_errors": [
+      "Failed to add the card. Please try again. [3]"
+    ]
+  },
   "xpaths": {
     "card_number": "//*[@id='root']/div[2]/div[1]/div[4]/div[2]/div[1]/div/div/input",
     "mmyy": "//*[@id='root']/div[2]/div[1]/div[4]/div[3]/div[1]/div/div[1]/div/div/input",
