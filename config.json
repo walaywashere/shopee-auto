@@ -14,7 +14,7 @@
     "retry_delay": 1
   },
   "retry": {
-    "enabled": true,
+    "enabled": false,
     "max_retries": 3,
     "retry_on_errors": [
       "Failed to add the card. Please try again. [3]"

@@ -52,7 +52,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         
         # Retry configuration
         retry_config = self.config.get("retry", {})
-        self.retry_enabled = tk.BooleanVar(value=retry_config.get("enabled", True))
+        self.retry_enabled = tk.BooleanVar(value=retry_config.get("enabled", False))
         self.retry_max_retries = tk.IntVar(value=retry_config.get("max_retries", 3))
         
         # Processing state
