@@ -348,7 +348,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         """Open settings dialog for Telegram configuration"""
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings - Telegram Configuration")
-        settings_window.geometry("550x450")
+        settings_window.geometry("550x550")
+        settings_window.minsize(550, 550)
         settings_window.transient(self)
         settings_window.grab_set()
         settings_window.resizable(True, True)
@@ -385,7 +386,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         
         # Form frame
         form_frame = ctk.CTkFrame(settings_window)
-        form_frame.pack(fill="both", expand=True, padx=30, pady=10)
+        form_frame.pack(fill="both", expand=True, padx=30, pady=(10, 10))
         
         # Bot Token
         ctk.CTkLabel(
@@ -431,7 +432,7 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             text="Get your chat ID from @userinfobot or @getidsbot",
             font=ctk.CTkFont(size=11),
             text_color=("gray40", "gray60")
-        ).pack(anchor="w", padx=20, pady=(0, 20))
+        ).pack(anchor="w", padx=20, pady=(0, 10))
         
         # Status label
         status_label = ctk.CTkLabel(
@@ -439,11 +440,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             text="",
             font=ctk.CTkFont(size=12)
         )
-        status_label.pack(pady=10)
+        status_label.pack(pady=(10, 20))
         
-        # Buttons frame
+        # Buttons frame - outside form_frame so it's always visible
         button_frame = ctk.CTkFrame(settings_window, fg_color="transparent")
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=(0, 20))
         
         def save_settings():
             """Save settings to .env file"""
