@@ -15,6 +15,8 @@ Fast, parallel credit card validation system for Shopee.ph with automatic invali
 
 The script automatically handles Python installation (if needed) and all dependencies. Just approve the UAC prompt if Python needs to be installed.
 
+📖 **[Read the detailed step-by-step guide →](QUICKSTART.md)**
+
 ## 🖥️ Two Ways to Use
 
 ### Option 1: GUI Mode (Recommended for Beginners)
