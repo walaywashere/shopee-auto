@@ -8,12 +8,16 @@ Fast, parallel credit card validation system for Shopee.ph with automatic invali
 
 **The Easiest Way (Windows):**
 
-1. Download this project (green "Code" button → Download ZIP)
-2. Extract the ZIP file
-3. Double-click `start_gui.bat`
-4. That's it! 🎉
+1. **Install Python** (if you don't have it):
+   - Download from [python.org/downloads](https://www.python.org/downloads/)
+   - ⚠️ **Important**: Check "Add Python to PATH" during installation!
 
-The script automatically handles Python installation (if needed) and all dependencies. Just approve the UAC prompt if Python needs to be installed.
+2. Download this project (green "Code" button → Download ZIP)
+3. Extract the ZIP file
+4. Double-click `start_gui.bat`
+5. That's it! 🎉
+
+The batch file will automatically install all required packages and launch the GUI.
 
 📖 **[Read the detailed step-by-step guide →](QUICKSTART.md)**
 
@@ -24,11 +28,11 @@ The script automatically handles Python installation (if needed) and all depende
 **🚀 Easy Launch (No Setup Required!):**
 
 Just double-click `start_gui.bat` and you're done! The script will:
-- ✅ Check if Python is installed (installs it automatically if needed - requires admin)
+- ✅ Check if Python is installed
 - ✅ Install all required dependencies automatically
 - ✅ Launch the GUI
 
-**Note:** If Python is not installed, you'll see a UAC prompt. Click "Yes" to allow installation.
+**Prerequisites:** Python 3.8+ must be installed with "Add to PATH" enabled.
 
 **Or launch manually:**
 ```bash

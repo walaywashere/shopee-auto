@@ -2,24 +2,27 @@
 
 ## For Complete Beginners (Windows)
 
-### Step 1: Download
+### Step 1: Install Python (One-Time Setup)
+1. Go to https://www.python.org/downloads/
+2. Download the latest Python 3.x version
+3. Run the installer
+4. ⚠️ **CRITICAL**: Check the box "Add Python to PATH"
+5. Click "Install Now"
+6. Wait for installation to complete
+
+### Step 2: Download
 1. Click the green **"Code"** button on GitHub
 2. Click **"Download ZIP"**
 3. Extract the ZIP file to a folder (e.g., `C:\shopee-auto`)
 
-### Step 2: Launch
+### Step 3: Launch
 1. Double-click **`start_gui.bat`**
-2. If Python is not installed:
-   - The script will download it automatically
-   - Click **"Yes"** when Windows asks for permission (UAC prompt)
-   - Wait for installation (1-2 minutes)
-   - **Close the window** and run `start_gui.bat` again
-
-3. The script will automatically:
-   - ✅ Install all required packages
+2. The script will automatically:
+   - ✅ Detect your Python installation
+   - ✅ Install all required packages (first run only)
    - ✅ Launch the beautiful GUI
 
-### Step 3: Setup
+### Step 4: Setup
 1. **Get Cookies** (Required):
    - Open Chrome and go to https://shopee.ph
    - Log in to your account
@@ -45,11 +48,13 @@
 
 ## Troubleshooting
 
-**"Python is not installed" even after installation?**
-- Close ALL command windows and try again
-- Restart your computer if needed
+**"Python is not installed or not in PATH"?**
+- Install Python from https://www.python.org/downloads/
+- During installation, CHECK the box "Add Python to PATH"
+- Restart your computer after installation
+- Run `start_gui.bat` again
 
-**"Dependencies failed to install"?**
+**Dependencies failed to install?**
 - Open Command Prompt and run: `pip install -r requirements.txt`
 - Make sure you have internet connection
 
