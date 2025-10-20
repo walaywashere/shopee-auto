@@ -12,17 +12,24 @@ from dotenv import load_dotenv
 from utils.helpers import log_error, log_info
 
 
-# Load environment variables
-load_dotenv()
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+def _get_telegram_credentials():
+    """
+    Get Telegram credentials, reloading from .env file each time.
+    This allows dynamic updates without restarting the application.
+    """
+    # Reload environment variables from .env file
+    load_dotenv(override=True)
+    
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    
+    return bot_token, chat_id
 
 
 def is_telegram_configured() -> bool:
     """Check if Telegram bot is properly configured."""
-    return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+    bot_token, chat_id = _get_telegram_credentials()
+    return bool(bot_token and chat_id)
 
 
 def format_card_message(card_data: str, result_message: str) -> str:
@@ -99,16 +106,19 @@ def send_telegram_notification(card_data: str, result_message: str) -> bool:
         return False
     
     try:
+        bot_token, chat_id = _get_telegram_credentials()
+        telegram_api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        
         message = format_card_message(card_data, result_message)
         
         payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
+            "chat_id": chat_id,
             "text": message,
             "parse_mode": "HTML",
             "disable_web_page_preview": True
         }
         
-        response = requests.post(TELEGRAM_API_URL, json=payload, timeout=10)
+        response = requests.post(telegram_api_url, json=payload, timeout=10)
         result = response.json()
         
         if result.get("ok"):
@@ -146,6 +156,9 @@ def send_batch_summary(total_checked: int, successful: int, failed: int, duratio
         return False
     
     try:
+        bot_token, chat_id = _get_telegram_credentials()
+        telegram_api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         success_rate = (successful / total_checked * 100) if total_checked > 0 else 0
         
@@ -162,13 +175,13 @@ def send_batch_summary(total_checked: int, successful: int, failed: int, duratio
         )
         
         payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
+            "chat_id": chat_id,
             "text": message,
             "parse_mode": "HTML",
             "disable_web_page_preview": True
         }
         
-        response = requests.post(TELEGRAM_API_URL, json=payload, timeout=10)
+        response = requests.post(telegram_api_url, json=payload, timeout=10)
         result = response.json()
         
         if result.get("ok"):

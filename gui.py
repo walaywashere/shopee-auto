@@ -298,8 +298,14 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             row=0, column=0, sticky="w", padx=15, pady=(15, 5)
         )
         
-        # Log textbox
-        self.log_textbox = ctk.CTkTextbox(log_frame, font=ctk.CTkFont(family="Consolas", size=11))
+        # Log textbox with scrollbar
+        self.log_textbox = ctk.CTkTextbox(
+            log_frame, 
+            font=ctk.CTkFont(family="Consolas", size=11),
+            wrap="word",
+            scrollbar_button_color=("gray70", "gray30"),
+            scrollbar_button_hover_color=("gray60", "gray40")
+        )
         self.log_textbox.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         
     def create_footer(self):
@@ -341,9 +347,10 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         """Open settings dialog for Telegram configuration"""
         settings_window = ctk.CTkToplevel(self)
         settings_window.title("Settings - Telegram Configuration")
-        settings_window.geometry("550x400")
+        settings_window.geometry("550x450")
         settings_window.transient(self)
         settings_window.grab_set()
+        settings_window.resizable(True, True)
         
         # Load current .env values
         env_path = Path(__file__).parent / ".env"
@@ -446,23 +453,30 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 status_label.configure(text="⚠️ Both fields are empty", text_color="orange")
                 return
             
+            if not token or not chat_id:
+                status_label.configure(text="⚠️ Both fields are required", text_color="orange")
+                return
+            
             try:
-                # Write to .env file
-                env_content = ""
-                if token:
-                    env_content += f"TELEGRAM_BOT_TOKEN={token}\n"
-                if chat_id:
-                    env_content += f"TELEGRAM_CHAT_ID={chat_id}\n"
+                # Ensure .env file path is absolute
+                env_path_abs = Path(__file__).parent / ".env"
                 
-                with open(env_path, 'w') as f:
-                    f.write("# Telegram Bot Configuration\n")
+                # Write to .env file with explicit encoding
+                env_content = f"# Telegram Bot Configuration\nTELEGRAM_BOT_TOKEN={token}\nTELEGRAM_CHAT_ID={chat_id}\n"
+                
+                with open(env_path_abs, 'w', encoding='utf-8') as f:
                     f.write(env_content)
                 
-                status_label.configure(text="✅ Settings saved successfully!", text_color="green")
-                self.after(1500, settings_window.destroy)
+                # Log the action
+                self.log_message(f"Telegram settings saved to {env_path_abs}", "INFO")
+                
+                status_label.configure(text="✅ Settings saved! Changes active immediately.", text_color="green")
+                self.after(2000, settings_window.destroy)
                 
             except Exception as e:
-                status_label.configure(text=f"❌ Error saving: {str(e)}", text_color="red")
+                error_msg = f"❌ Error saving: {str(e)}"
+                status_label.configure(text=error_msg, text_color="red")
+                self.log_message(error_msg, "ERROR")
         
         def clear_settings():
             """Clear Telegram settings"""
