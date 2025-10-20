@@ -451,8 +451,21 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             token = token_entry.get().strip()
             chat_id = chat_id_entry.get().strip()
             
+            # Allow saving empty fields (to disable Telegram)
             if not token and not chat_id:
-                status_label.configure(text="⚠️ Both fields are empty", text_color="orange")
+                # Confirm deletion
+                if messagebox.askyesno("Confirm", "This will disable Telegram notifications. Continue?", parent=settings_window):
+                    try:
+                        env_path_abs = Path(__file__).parent / ".env"
+                        if env_path_abs.exists():
+                            env_path_abs.unlink()
+                        status_label.configure(text="✅ Telegram disabled!", text_color="green")
+                        self.log_message("Telegram notifications disabled", "INFO")
+                        self.after(1500, settings_window.destroy)
+                    except Exception as e:
+                        error_msg = f"❌ Error: {str(e)}"
+                        status_label.configure(text=error_msg, text_color="red")
+                        self.log_message(error_msg, "ERROR")
                 return
             
             if not token or not chat_id:
@@ -480,17 +493,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 status_label.configure(text=error_msg, text_color="red")
                 self.log_message(error_msg, "ERROR")
         
-        def clear_settings():
-            """Clear Telegram settings"""
-            if env_path.exists():
-                try:
-                    env_path.unlink()
-                    status_label.configure(text="✅ Settings cleared!", text_color="green")
-                    token_entry.delete(0, 'end')
-                    chat_id_entry.delete(0, 'end')
-                    self.after(1500, settings_window.destroy)
-                except Exception as e:
-                    status_label.configure(text=f"❌ Error: {str(e)}", text_color="red")
+        def clear_fields():
+            """Clear input fields only (doesn't save)"""
+            token_entry.delete(0, 'end')
+            chat_id_entry.delete(0, 'end')
+            status_label.configure(text="Fields cleared. Click Save to disable Telegram.", text_color="orange")
         
         # Buttons
         ctk.CTkButton(
@@ -505,12 +512,12 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         
         ctk.CTkButton(
             button_frame,
-            text="🗑️ Clear",
-            command=clear_settings,
+            text="🗑️ Clear Fields",
+            command=clear_fields,
             width=120,
             height=35,
-            fg_color="red",
-            hover_color="darkred"
+            fg_color="orange",
+            hover_color="darkorange"
         ).pack(side="left", padx=10)
         
         ctk.CTkButton(
