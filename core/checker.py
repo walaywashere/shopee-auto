@@ -167,8 +167,56 @@ async def _process_single_card(
             
             await tab_manager.submit_form(current_tab, config)
             
-            # Check for error popup immediately after submit (before waiting for API)
-            has_popup, popup_message = await response_analyzer.check_for_error_popup(current_tab, config)
+            # Poll for error popup or API response (whichever comes first)
+            # This handles cases where popup appears instead of API response
+            has_popup = False
+            popup_message = ""
+            api_payload = None
+            
+            timeouts = config.get("timeouts", {})
+            api_timeout = float(timeouts.get("api_response", 15))
+            error_check_timeout = float(timeouts.get("error_popup_check", 1))
+            
+            start_time = asyncio.get_event_loop().time()
+            poll_interval = 0.5  # Check for popup every 500ms
+            
+            while asyncio.get_event_loop().time() - start_time < api_timeout:
+                # Check for error popup
+                try:
+                    xpaths = config.get("xpaths", {})
+                    error_popup_xpath = xpaths.get("error_popup", "")
+                    if error_popup_xpath:
+                        error_text = await response_analyzer._get_xpath_text_js(current_tab, error_popup_xpath)
+                        if error_text and error_text.strip():
+                            has_popup = True
+                            popup_message = error_text.strip()
+                            log_info(f"Error popup detected during polling: {popup_message}")
+                            break
+                except Exception:
+                    pass
+                
+                # Try to get API response (non-blocking check)
+                if interceptor._queue and not interceptor._queue.empty():
+                    try:
+                        payload = interceptor._queue.get_nowait()
+                        url = (payload.get("url") or "").lower()
+                        api_endpoint = config.get("urls", {}).get("api_endpoint", "")
+                        if api_endpoint in url:
+                            api_payload = payload
+                            log_info(f"API response received during polling")
+                            break
+                    except asyncio.QueueEmpty:
+                        pass
+                
+                await async_sleep(poll_interval)
+            
+            # If no popup or API response found yet, do final check
+            if not has_popup and not api_payload:
+                has_popup, popup_message = await response_analyzer.check_for_error_popup(current_tab, config)
+                if not has_popup:
+                    api_payload = await _await_target_response(interceptor, 1)  # Quick final check
+            
+            # Process results
             if has_popup:
                 # Check if this error should trigger a retry
                 should_retry_error = False
@@ -202,11 +250,10 @@ async def _process_single_card(
                     reason = popup_message or "Invalid card detected via popup"
                     log_info(f"Error popup detected, skipping API wait: {reason}")
             else:
-                # No popup, wait for API response
-                payload = await _await_target_response(interceptor, api_timeout)
-                payload = payload or {}
+                # No popup, use API response or timeout result
+                api_payload = api_payload or {}
                 # Pass skip_popup_check=True since we already checked above
-                status, reason = await response_analyzer.determine_status(current_tab, payload, config, skip_popup_check=True)
+                status, reason = await response_analyzer.determine_status(current_tab, api_payload, config, skip_popup_check=True)
             
             card_str = format_card_string(card)
             log_card_result(card_index, total_cards, status, card_str, reason)
