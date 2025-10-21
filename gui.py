@@ -35,8 +35,11 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         
         # Window configuration
         self.title("Shopee Card Checker Pro")
-        self.geometry("900x750")
-        self.minsize(800, 700)
+        self.geometry("950x800")
+        self.minsize(850, 750)
+        
+        # Make window resizable and responsive
+        self.resizable(True, True)
         
         # Load config
         self.config = self.load_config()
@@ -286,6 +289,8 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             state="disabled"
         )
         self.stop_button.grid(row=0, column=1, padx=10, sticky="ew")
+        
+
     
     def create_progress_section(self, parent):
         """Create progress indicators section"""
@@ -304,7 +309,16 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             text="Ready to start",
             font=ctk.CTkFont(size=13)
         )
-        self.progress_label.grid(row=1, column=0, padx=20, pady=(0, 10))
+        self.progress_label.grid(row=1, column=0, padx=20, pady=(0, 5))
+        
+        # Speed indicator
+        self.speed_label = ctk.CTkLabel(
+            progress_frame,
+            text="Speed: 0 cards/min",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60")
+        )
+        self.speed_label.grid(row=2, column=0, padx=20, pady=(0, 10))
         
         # Stats frame
         stats_frame = ctk.CTkFrame(progress_frame, fg_color="transparent")
@@ -324,26 +338,75 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         self.failed_label.grid(row=0, column=3, padx=5)
     
     def create_log_section(self, parent):
-        """Create log display section"""
+        """Create log display section with optimized scrolling"""
         log_frame = ctk.CTkFrame(parent)
         log_frame.grid(row=4, column=0, sticky="nsew", padx=20, pady=(10, 20))
-        log_frame.grid_rowconfigure(1, weight=1, minsize=200)  # Minimum height for log section
+        log_frame.grid_rowconfigure(1, weight=1, minsize=200)
         log_frame.grid_columnconfigure(0, weight=1)
         
-        ctk.CTkLabel(log_frame, text="📋 Activity Log", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=15, pady=(15, 5)
-        )
+        # Header with controls
+        header_frame = ctk.CTkFrame(log_frame, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 5))
+        header_frame.grid_columnconfigure(0, weight=1)
         
-        # Log textbox with scrollbar - explicitly set height
+        ctk.CTkLabel(header_frame, text="📋 Activity Log", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        
+        # Clear log button
+        clear_btn = ctk.CTkButton(
+            header_frame, text="🗑️ Clear", width=70, height=25,
+            command=self.clear_log, font=ctk.CTkFont(size=11)
+        )
+        clear_btn.pack(side="right", padx=(10, 0))
+        
+        # Auto-scroll toggle
+        self.auto_scroll = tk.BooleanVar(value=True)
+        auto_scroll_cb = ctk.CTkCheckBox(
+            header_frame, text="Auto-scroll", variable=self.auto_scroll,
+            width=80, font=ctk.CTkFont(size=11)
+        )
+        auto_scroll_cb.pack(side="right", padx=(10, 0))
+        
+        # Optimized log textbox - CustomTkinter handles scrolling internally
         self.log_textbox = ctk.CTkTextbox(
             log_frame, 
             font=ctk.CTkFont(family="Consolas", size=11),
             wrap="word",
-            height=200,  # Explicit minimum height
+            height=200,
+            activate_scrollbars=True,  # Ensure scrollbars are active
             scrollbar_button_color=("gray70", "gray30"),
             scrollbar_button_hover_color=("gray60", "gray40")
         )
         self.log_textbox.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
+        
+        # Enhanced mouse wheel scrolling for better responsiveness
+        self.log_textbox.bind("<MouseWheel>", self._on_mousewheel)
+        self.log_textbox.bind("<Button-4>", self._on_mousewheel)  # Linux scroll up
+        self.log_textbox.bind("<Button-5>", self._on_mousewheel)  # Linux scroll down
+        
+    def clear_log(self):
+        """Clear the log textbox"""
+        self.log_textbox.delete("1.0", "end")
+        
+    def _on_mousewheel(self, event):
+        """Enhanced mouse wheel scrolling for better responsiveness"""
+        try:
+            # Handle different platforms and scroll directions
+            if event.delta:
+                # Windows and macOS
+                delta = int(-1 * (event.delta / 120))
+            elif event.num == 4:
+                # Linux scroll up
+                delta = -1
+            elif event.num == 5:
+                # Linux scroll down
+                delta = 1
+            else:
+                return
+            
+            # Scroll with better sensitivity
+            self.log_textbox.yview_scroll(delta * 3, "units")
+        except Exception:
+            pass  # Fail silently if scrolling fails
         
     def create_footer(self):
         """Create footer with status bar"""
@@ -569,9 +632,37 @@ class ShopeeCardCheckerGUI(ctk.CTk):
         ).pack(side="left", padx=10)
     
     def log_message(self, message: str, level: str = "INFO"):
-        """Add message to log textbox"""
-        self.log_textbox.insert("end", f"[{level}] {message}\n")
-        self.log_textbox.see("end")
+        """Add message to log textbox with enhanced formatting"""
+        timestamp = __import__('datetime').datetime.now().strftime("%H:%M:%S")
+        
+        # Format message with proper spacing and icons
+        level_icons = {
+            "INFO": "ℹ️",
+            "ERROR": "❌", 
+            "WARNING": "⚠️",
+            "SUCCESS": "✅"
+        }
+        
+        icon = level_icons.get(level, "📝")
+        formatted_message = f"{timestamp} {icon} {message}\n"
+        
+        self.log_textbox.insert("end", formatted_message)
+        
+        # Auto-scroll if enabled
+        if self.auto_scroll.get():
+            self.log_textbox.see("end")
+            
+        # Efficient log size management
+        content = self.log_textbox.get("1.0", "end")
+        lines = content.count('\n')
+        if lines > 500:  # Keep last 500 lines for better performance
+            lines_to_keep = content.split('\n')[-400:]  # Keep last 400 lines
+            self.log_textbox.delete("1.0", "end")
+            self.log_textbox.insert("1.0", '\n'.join(lines_to_keep) + '\n')
+            if self.auto_scroll.get():
+                self.log_textbox.see("end")
+    
+
     
     def start_processing(self):
         """Start card processing"""
@@ -643,8 +734,14 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.log_message("Processing task cancelled", "WARNING")
     
     def monitor_progress(self):
-        """Monitor progress by watching result files"""
+        """Monitor progress by watching result files with enhanced logging"""
         import time
+        
+        last_processed = 0
+        last_success = 0
+        last_failed = 0
+        last_3ds = 0
+        start_time = time.time()
         
         while self.is_processing:
             try:
@@ -669,26 +766,53 @@ class ShopeeCardCheckerGUI(ctk.CTk):
                 
                 processed = success_count + failed_count + three_ds_count
                 
+                # Log progress updates when counts change
+                if processed > last_processed:
+                    if success_count > last_success:
+                        new_successes = success_count - last_success
+                        self.log_message(f"✅ {new_successes} new successful card(s) validated", "SUCCESS")
+                    
+                    if failed_count > last_failed:
+                        new_failures = failed_count - last_failed
+                        self.log_message(f"❌ {new_failures} card(s) failed validation", "ERROR")
+                    
+                    if three_ds_count > last_3ds:
+                        new_3ds = three_ds_count - last_3ds
+                        self.log_message(f"🔵 {new_3ds} card(s) require 3DS verification", "WARNING")
+                    
+                    # Update tracking variables
+                    last_processed = processed
+                    last_success = success_count
+                    last_failed = failed_count
+                    last_3ds = three_ds_count
+                
                 # Update UI in main thread
                 self.after(0, lambda sc=success_count: self.success_label.configure(text=f"✅ Success: {sc}"))
                 self.after(0, lambda tds=three_ds_count: self.three_ds_label.configure(text=f"🔵 3DS: {tds}"))
                 self.after(0, lambda fc=failed_count: self.failed_label.configure(text=f"❌ Failed: {fc}"))
+                
+                # Calculate processing speed
+                elapsed_time = time.time() - start_time
+                if elapsed_time > 0 and processed > 0:
+                    cards_per_minute = (processed / elapsed_time) * 60
+                    self.after(0, lambda cpm=cards_per_minute: 
+                              self.speed_label.configure(text=f"Speed: {cpm:.1f} cards/min"))
                 
                 # Update progress bar if we know total
                 if self.total_cards_count > 0:
                     progress = processed / self.total_cards_count
                     self.after(0, lambda p=progress: self.progress_bar.set(p))
                     self.after(0, lambda p=processed, t=self.total_cards_count: 
-                              self.progress_label.configure(text=f"Processing: {p}/{t} cards"))
+                              self.progress_label.configure(text=f"Processing: {p}/{t} cards ({(p/t*100):.1f}%)"))
                 else:
                     self.after(0, lambda p=processed: 
                               self.progress_label.configure(text=f"Processed: {p} cards"))
                 
-                time.sleep(0.5)  # Update every 500ms
+                time.sleep(1.0)  # Update every second for better performance
                 
             except Exception as e:
                 # Silently continue if files don't exist yet
-                time.sleep(0.5)
+                time.sleep(1.0)
                 continue
     
     def run_processing(self):
@@ -840,6 +964,15 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.after(0, lambda: self.three_ds_label.configure(text=f"🔵 3DS: {summary.get('three_ds', 0)}"))
             self.after(0, lambda: self.failed_label.configure(text=f"❌ Failed: {summary['failed']}"))
             self.after(0, lambda: self.progress_bar.set(1.0))
+            
+            # Log detailed results summary in console-style format
+            success_rate = (summary['success'] / summary['total'] * 100) if summary['total'] > 0 else 0
+            self.log_message("=" * 40, "INFO")
+            self.log_message("🎯 PROCESSING COMPLETE!", "SUCCESS")
+            self.log_message(f"📊 Results: {summary['success']}/{summary['total']} ({success_rate:.1f}% success)", "INFO")
+            if summary.get('three_ds', 0) > 0:
+                self.log_message(f"🔵 3DS Required: {summary.get('three_ds', 0)} cards", "INFO")
+            self.log_message("=" * 40, "INFO")
             
             # Calculate duration
             duration = time.time() - start_time

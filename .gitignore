@@ -35,3 +35,7 @@ cookies.txt
 # Tests
 tests/
 output/
+
+#IDE
+.kiro/
+.agents/

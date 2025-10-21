@@ -1,8 +1,27 @@
 {
   "browser": {
-    "headless": true
+    "headless": true,
+    "args": [
+      "--disable-blink-features=AutomationControlled",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-notifications",
+      "--disable-gpu",
+      "--disable-software-rasterizer",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding",
+      "--memory-pressure-off"
+    ]
   },
-  "workers": 5,
+  "workers": 8,
+  "performance": {
+    "browser_pool_size": 10,
+    "batch_size": 20,
+    "concurrent_limit": 8,
+    "memory_cleanup_interval": 50
+  },
   "timeouts": {
     "page_load": 10,
     "element_wait": 8,
