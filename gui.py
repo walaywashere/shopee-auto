@@ -769,35 +769,55 @@ class ShopeeCardCheckerGUI(ctk.CTk):
             self.after(0, lambda: self.total_label.configure(text=f"Total: {total_cards}"))
             self.log_message(f"Loaded {total_cards} cards", "INFO")
             
-            # Launch browsers
-            self.log_message(f"Launching {self.workers_count.get()} browser instances...", "INFO")
-            for i in range(self.workers_count.get()):
-                # Check if stopped
+            # Launch browsers in parallel
+            self.log_message(f"Launching {self.workers_count.get()} browser instances in parallel...", "INFO")
+            
+            async def init_single_browser(index):
+                """Initialize a single browser with cookies and session verification"""
                 if not self.is_processing:
-                    self.log_message("Stopping: Closing browsers...", "WARNING")
-                    break
+                    return None
+                
+                try:
+                    self.log_message(f"Starting browser {index + 1}/{self.workers_count.get()}", "INFO")
+                    browser = await init_browser(self.config)
                     
-                self.log_message(f"Starting browser {i + 1}/{self.workers_count.get()}", "INFO")
-                browser = await init_browser(self.config)
-                cookies_loaded = await load_session_cookies(browser, self.cookies_file_path.get(), self.config)
-                if not cookies_loaded:
-                    self.log_message(f"Unable to load cookies for browser {i + 1}; aborting", "ERROR")
-                    # Close all browsers created so far
-                    for b in browsers:
-                        await close_browser(b, keep_open=False)
-                    return
-                if not await verify_session(browser, self.config):
-                    self.log_message(f"Session verification failed for browser {i + 1}; aborting", "ERROR")
-                    # Close all browsers created so far
-                    for b in browsers:
-                        await close_browser(b, keep_open=False)
-                    await close_browser(browser, keep_open=False)
-                    return
-                browsers.append(browser)
+                    cookies_loaded = await load_session_cookies(browser, self.cookies_file_path.get(), self.config)
+                    if not cookies_loaded:
+                        self.log_message(f"Unable to load cookies for browser {index + 1}", "ERROR")
+                        await close_browser(browser, keep_open=False)
+                        return None
+                    
+                    if not await verify_session(browser, self.config):
+                        self.log_message(f"Session verification failed for browser {index + 1}", "ERROR")
+                        await close_browser(browser, keep_open=False)
+                        return None
+                    
+                    self.log_message(f"Browser {index + 1} ready", "INFO")
+                    return browser
+                except Exception as e:
+                    self.log_message(f"Error initializing browser {index + 1}: {e}", "ERROR")
+                    return None
+            
+            # Launch all browsers concurrently
+            browser_tasks = [init_single_browser(i) for i in range(self.workers_count.get())]
+            browser_results = await asyncio.gather(*browser_tasks, return_exceptions=False)
+            
+            # Filter out None results and collect valid browsers
+            browsers = [b for b in browser_results if b is not None]
+            
+            # Check if we got enough browsers
+            if not browsers:
+                self.log_message("Failed to initialize any browsers; aborting", "ERROR")
+                return
+            
+            if len(browsers) < self.workers_count.get():
+                self.log_message(f"Warning: Only {len(browsers)}/{self.workers_count.get()} browsers initialized successfully", "WARNING")
             
             # Check if stopped before processing
             if not self.is_processing:
                 self.log_message("Stopping: Closing browsers...", "WARNING")
+                for b in browsers:
+                    await close_browser(b, keep_open=False)
                 return
             
             self.log_message(f"Successfully initialized {len(browsers)} browser instances", "INFO")
